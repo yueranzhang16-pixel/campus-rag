@@ -27,9 +27,9 @@
 
       <form id="question-form" class="question-form">
         <label class="sr-only" for="question">输入你的问题</label>
-        <textarea id="question" name="question" rows="2" maxlength="500" placeholder="例如：顺序队列的假溢出是什么？" required></textarea>
+        <textarea id="question" name="question" rows="2" maxlength="500" placeholder="每行一个问题；可一次输入多个问题" required></textarea>
         <div class="form-footer">
-          <span>回答会调用 DeepSeek API。</span>
+          <span>每个问题都会调用一次 DeepSeek API。</span>
           <button id="submit-button" type="submit">发送问题</button>
         </div>
       </form>

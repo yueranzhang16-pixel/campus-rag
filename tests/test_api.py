@@ -42,6 +42,7 @@ class ApiTests(unittest.TestCase):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
         self.assertIn("校园知识库问答", response.text)
+        self.assertIn("每行一个问题", response.text)
 
     def test_retrieve_returns_evidence(self):
         response = self.client.post("/retrieve", json={"question": "什么是顺序表？"})

@@ -55,12 +55,14 @@ async function ask(question) {
   }
 }
 
-form.addEventListener("submit", (event) => {
+form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const question = input.value.trim();
-  if (!question) return;
+  const questions = input.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+  if (!questions.length) return;
   input.value = "";
-  ask(question);
+  for (const question of questions) {
+    await ask(question);
+  }
 });
 
 input.addEventListener("keydown", (event) => {
