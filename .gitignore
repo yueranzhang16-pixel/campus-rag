@@ -4,6 +4,7 @@ __pycache__/
 data/index.json
 data/embedding_index.json
 reports/
+logs/
 models/
 tmp*/
 # Local remnants from the pre-reorganization project layout.

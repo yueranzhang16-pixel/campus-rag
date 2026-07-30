@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import os
+import time
 from functools import cached_property
 from pathlib import Path
 from typing import Protocol
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .cli import load_embedding_index, load_index
 from .generation import DEFAULT_MODEL, DeepSeekGenerator
+from .history import AnswerHistory
 from .hybrid import HybridRetriever
 from .retrieval import SearchResult
 
@@ -19,6 +21,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_EMBEDDING_INDEX = PROJECT_ROOT / "data" / "embedding_index.json"
 DEFAULT_LEXICAL_INDEX = PROJECT_ROOT / "data" / "index.json"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+DEFAULT_HISTORY_PATH = PROJECT_ROOT / "logs" / "answer_history.jsonl"
 
 
 class Retriever(Protocol):
@@ -49,6 +52,10 @@ class AnswerResponse(RetrievalResponse):
     answer: str = Field(description="DeepSeek 基于证据生成的回答，包含来源标注")
 
 
+class HistoryResponse(BaseModel):
+    records: list[dict] = Field(description="最近的本地问答记录，按时间从新到旧排序")
+
+
 class CampusRagService:
     """Lazily loads local indexes and the API client once per server process."""
 
@@ -57,10 +64,12 @@ class CampusRagService:
         embedding_index: Path = DEFAULT_EMBEDDING_INDEX,
         lexical_index: Path = DEFAULT_LEXICAL_INDEX,
         model: str = DEFAULT_MODEL,
+        history_path: Path | None = DEFAULT_HISTORY_PATH,
     ):
         self.embedding_index = embedding_index
         self.lexical_index = lexical_index
         self.model = model
+        self.history = AnswerHistory(history_path) if history_path else None
 
     @cached_property
     def retriever(self) -> HybridRetriever:
@@ -78,8 +87,15 @@ class CampusRagService:
         return self.retriever.search(question, top_k)
 
     def answer(self, question: str, top_k: int) -> tuple[str, list[SearchResult]]:
+        started = time.perf_counter()
         evidence = self.retrieve(question, top_k)
-        return self.generator.answer(question, evidence), evidence
+        answer = self.generator.answer(question, evidence)
+        if self.history:
+            try:
+                self.history.append(question, answer, evidence, (time.perf_counter() - started) * 1000)
+            except OSError:
+                pass
+        return answer, evidence
 
 
 def evidence_response(evidence: list[SearchResult]) -> list[Evidence]:
@@ -97,6 +113,7 @@ def create_app(service: CampusRagService | None = None) -> FastAPI:
         description=(
             "先从本地 Markdown 知识库中检索证据，再由 DeepSeek 根据证据回答。"
             "`/retrieve` 不调用大模型；`/answer` 会调用 DeepSeek 并产生少量 API 费用。"
+            "问答记录仅保存在本机 logs/ 目录，不会上传。"
         ),
         version="0.1.0",
     )
@@ -109,6 +126,10 @@ def create_app(service: CampusRagService | None = None) -> FastAPI:
     @app.get("/health", summary="检查服务状态", description="确认 API 服务已成功启动；不会加载模型，也不会调用 DeepSeek。")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/history", response_model=HistoryResponse, summary="查看最近问答记录")
+    def history(limit: int = Query(default=20, ge=1, le=50, description="返回最近几条本地记录")) -> HistoryResponse:
+        return HistoryResponse(records=service.history.latest(limit) if service.history else [])
 
     @app.post(
         "/retrieve",

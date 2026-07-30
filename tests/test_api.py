@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -28,7 +29,9 @@ class FakeService(CampusRagService):
 
 class ApiTests(unittest.TestCase):
     def setUp(self):
-        self.client = TestClient(create_app(FakeService()))
+        history_path = Path(__file__).resolve().parents[1] / "logs" / "test_answer_history.jsonl"
+        service = FakeService(history_path=history_path)
+        self.client = TestClient(create_app(service))
 
     def test_health(self):
         response = self.client.get("/health")
@@ -50,6 +53,14 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("线性表.md", response.json()["answer"])
         self.assertEqual(response.json()["evidence"][0]["source"], "线性表.md")
+
+    def test_history_keeps_answer_metadata_locally(self):
+        self.client.post("/answer", json={"question": "什么是顺序表？"})
+        response = self.client.get("/history")
+        record = response.json()["records"][0]
+        self.assertEqual(record["question"], "什么是顺序表？")
+        self.assertEqual(record["sources"], ["线性表.md"])
+        self.assertIn("latency_ms", record)
 
     def test_rejects_empty_question(self):
         response = self.client.post("/retrieve", json={"question": ""})
