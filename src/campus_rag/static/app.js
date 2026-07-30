@@ -4,7 +4,7 @@ const submitButton = document.querySelector("#submit-button");
 const conversation = document.querySelector("#conversation");
 const template = document.querySelector("#message-template");
 
-function addMessage(label, content, type = "assistant", evidence = []) {
+function addMessage(label, content, type = "assistant", evidence = [], answerId = null) {
   const node = template.content.firstElementChild.cloneNode(true);
   node.classList.add(type);
   node.querySelector(".message-label").textContent = label;
@@ -30,6 +30,26 @@ function addMessage(label, content, type = "assistant", evidence = []) {
     });
     node.append(details);
   }
+  if (answerId) {
+    const feedback = document.createElement("div");
+    feedback.className = "feedback";
+    feedback.textContent = "这条回答有帮助吗？";
+    [["👍 有帮助", "up"], ["👎 有问题", "down"]].forEach(([label, rating]) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.addEventListener("click", async () => {
+        const response = await fetch("/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ answer_id: answerId, rating }),
+        });
+        feedback.textContent = response.ok ? "已记录反馈，感谢。" : "反馈保存失败，请稍后重试。";
+      });
+      feedback.append(button);
+    });
+    node.append(feedback);
+  }
   conversation.append(node);
   node.scrollIntoView({ behavior: "smooth", block: "end" });
 }
@@ -46,7 +66,7 @@ async function ask(question) {
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.detail || "请求失败，请稍后再试。");
-    addMessage("知识库助手", payload.answer, "assistant", payload.evidence);
+    addMessage("知识库助手", payload.answer, "assistant", payload.evidence, payload.answer_id);
   } catch (error) {
     addMessage("请求失败", error.message, "error");
   } finally {

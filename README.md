@@ -65,7 +65,7 @@ python -m uvicorn campus_rag.api:app --host 127.0.0.1 --port 8010 --reload
 | --- | --- | --- |
 | 混合检索 | `hybrid-eval` | `recall@3 = 100% (10/10)` |
 | 答案回归 | `answer-eval`（3 道已修复失败题） | `100% (3/3)` |
-| 自动测试 | `python -m unittest discover -s tests -v` | `21 passed` |
+| 自动测试 | `python -m unittest discover -s tests -v` | `22 passed` |
 
 运行检索评测：
 
@@ -89,10 +89,13 @@ python -m campus_rag.cli answer-eval --index data/embedding_index.json --lexical
 | `POST /retrieve` | 返回混合检索证据 | 否 |
 | `POST /answer` | 返回回答与对应证据 | 是 |
 | `GET /history` | 返回最近的本地问答记录 | 否 |
+| `POST /feedback` | 记录“有帮助 / 有问题”反馈 | 否 |
 
 开发调试接口可打开 [http://127.0.0.1:8010/docs](http://127.0.0.1:8010/docs)。
 
 每次成功调用 `/answer` 后，系统会在本机 `logs/answer_history.jsonl` 追加记录问题、回答、来源和耗时。该目录已被 Git 忽略，可用于分析真实失败案例，不会上传到 GitHub。
+
+网页中每条回答下方都有“有帮助 / 有问题”按钮；反馈会保存到本机 `logs/feedback.jsonl`，并通过回答编号关联对应的问答记录。
 
 ## 项目结构
 

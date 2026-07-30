@@ -4,7 +4,7 @@ import os
 import time
 from functools import cached_property
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from .cli import load_embedding_index, load_index
 from .generation import DEFAULT_MODEL, DeepSeekGenerator
-from .history import AnswerHistory
+from .history import AnswerHistory, FeedbackHistory
 from .hybrid import HybridRetriever
 from .retrieval import SearchResult
 
@@ -22,6 +22,7 @@ DEFAULT_EMBEDDING_INDEX = PROJECT_ROOT / "data" / "embedding_index.json"
 DEFAULT_LEXICAL_INDEX = PROJECT_ROOT / "data" / "index.json"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 DEFAULT_HISTORY_PATH = PROJECT_ROOT / "logs" / "answer_history.jsonl"
+DEFAULT_FEEDBACK_PATH = PROJECT_ROOT / "logs" / "feedback.jsonl"
 
 
 class Retriever(Protocol):
@@ -50,10 +51,20 @@ class RetrievalResponse(BaseModel):
 
 class AnswerResponse(RetrievalResponse):
     answer: str = Field(description="DeepSeek 基于证据生成的回答，包含来源标注")
+    answer_id: str | None = Field(description="本地问答记录编号，用于提交反馈")
 
 
 class HistoryResponse(BaseModel):
     records: list[dict] = Field(description="最近的本地问答记录，按时间从新到旧排序")
+
+
+class FeedbackRequest(BaseModel):
+    answer_id: str = Field(min_length=1, description="回答记录编号")
+    rating: Literal["up", "down"] = Field(description="up 表示有帮助，down 表示有问题")
+
+
+class FeedbackResponse(BaseModel):
+    record: dict
 
 
 class CampusRagService:
@@ -65,11 +76,13 @@ class CampusRagService:
         lexical_index: Path = DEFAULT_LEXICAL_INDEX,
         model: str = DEFAULT_MODEL,
         history_path: Path | None = DEFAULT_HISTORY_PATH,
+        feedback_path: Path | None = DEFAULT_FEEDBACK_PATH,
     ):
         self.embedding_index = embedding_index
         self.lexical_index = lexical_index
         self.model = model
         self.history = AnswerHistory(history_path) if history_path else None
+        self.feedback = FeedbackHistory(feedback_path) if feedback_path else None
 
     @cached_property
     def retriever(self) -> HybridRetriever:
@@ -86,16 +99,17 @@ class CampusRagService:
     def retrieve(self, question: str, top_k: int) -> list[SearchResult]:
         return self.retriever.search(question, top_k)
 
-    def answer(self, question: str, top_k: int) -> tuple[str, list[SearchResult]]:
+    def answer(self, question: str, top_k: int) -> tuple[str, list[SearchResult], str | None]:
         started = time.perf_counter()
         evidence = self.retrieve(question, top_k)
         answer = self.generator.answer(question, evidence)
+        answer_id = None
         if self.history:
             try:
-                self.history.append(question, answer, evidence, (time.perf_counter() - started) * 1000)
+                answer_id = self.history.append(question, answer, evidence, (time.perf_counter() - started) * 1000)
             except OSError:
                 pass
-        return answer, evidence
+        return answer, evidence, answer_id
 
 
 def evidence_response(evidence: list[SearchResult]) -> list[Evidence]:
@@ -131,6 +145,20 @@ def create_app(service: CampusRagService | None = None) -> FastAPI:
     def history(limit: int = Query(default=20, ge=1, le=50, description="返回最近几条本地记录")) -> HistoryResponse:
         return HistoryResponse(records=service.history.latest(limit) if service.history else [])
 
+    @app.get("/feedback", response_model=HistoryResponse, summary="查看最近用户反馈")
+    def feedback(limit: int = Query(default=20, ge=1, le=50, description="返回最近几条本地反馈")) -> HistoryResponse:
+        return HistoryResponse(records=service.feedback.latest(limit) if service.feedback else [])
+
+    @app.post("/feedback", response_model=FeedbackResponse, summary="提交回答反馈")
+    def submit_feedback(request: FeedbackRequest) -> FeedbackResponse:
+        if not service.feedback:
+            raise HTTPException(status_code=503, detail="当前服务未启用本地反馈记录。")
+        try:
+            record = service.feedback.append(request.answer_id, request.rating)
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="本地反馈记录写入失败。") from exc
+        return FeedbackResponse(record=record)
+
     @app.post(
         "/retrieve",
         response_model=RetrievalResponse,
@@ -152,12 +180,12 @@ def create_app(service: CampusRagService | None = None) -> FastAPI:
     )
     def answer(request: QuestionRequest) -> AnswerResponse:
         try:
-            text, evidence = service.answer(request.question, request.top_k)
+            text, evidence, answer_id = service.answer(request.question, request.top_k)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except RuntimeError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
-        return AnswerResponse(answer=text, evidence=evidence_response(evidence))
+        return AnswerResponse(answer=text, answer_id=answer_id, evidence=evidence_response(evidence))
 
     return app
 

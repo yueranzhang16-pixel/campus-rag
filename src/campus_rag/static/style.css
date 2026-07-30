@@ -32,6 +32,9 @@ h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.25rem); letter-spacing: -.04em; }
 .source-card { margin-top: 10px; padding: 12px; background: #f7f9fc; border-radius: 10px; }
 .source-meta { margin: 0 0 7px; color: #5d687a; font-size: .82rem; }
 .source-text { margin: 0; color: #39465a; font-size: .9rem; white-space: pre-wrap; }
+.feedback { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 14px; color: #5d687a; font-size: .86rem; }
+.feedback button { border: 1px solid #d8e4ff; border-radius: 99px; padding: 6px 10px; background: #f4f7ff; color: #315ebd; cursor: pointer; }
+.feedback button:hover { background: #e4edff; }
 
 .question-form { position: sticky; bottom: 16px; margin-top: 22px; padding: 12px; }
 textarea { width: 100%; resize: vertical; border: 0; outline: 0; padding: 7px; color: #18202c; background: transparent; }
