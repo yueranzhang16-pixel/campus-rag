@@ -6,3 +6,5 @@ data/embedding_index.json
 reports/
 models/
 tmp*/
+# Local remnants from the pre-reorganization project layout.
+campus-rag/
