@@ -1,0 +1,6 @@
+[
+  {"question": "本科生最多能借多少本书？", "expected_source": "library.md"},
+  {"question": "普通图书能借多久？", "expected_source": "library.md"},
+  {"question": "课程项目占成绩多少？", "expected_source": "course.md"},
+  {"question": "什么时候提交课程项目？", "expected_source": "course.md"}
+]

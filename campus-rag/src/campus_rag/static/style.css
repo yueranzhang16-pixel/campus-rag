@@ -1,0 +1,48 @@
+:root {
+  color: #18202c;
+  background: #f5f7fb;
+  font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, textarea { font: inherit; }
+
+.app-shell { width: min(900px, calc(100% - 32px)); margin: 0 auto; padding: 58px 0 32px; }
+.hero { margin-bottom: 28px; }
+.eyebrow { margin: 0 0 9px; color: #4774d6; font-size: .78rem; font-weight: 800; letter-spacing: .14em; }
+h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.25rem); letter-spacing: -.04em; }
+.hero > p:last-child { color: #5d687a; font-size: 1.02rem; }
+
+.conversation { display: grid; gap: 16px; min-height: 220px; }
+.welcome-card, .message, .question-form { background: #fff; border: 1px solid #e3e8f1; border-radius: 18px; box-shadow: 0 8px 24px rgba(31, 44, 71, .05); }
+.welcome-card { padding: 24px; }
+.welcome-card h2 { margin: 0 0 16px; font-size: 1rem; }
+.suggestions { display: flex; flex-wrap: wrap; gap: 10px; }
+.suggestions button { color: #315ebd; background: #eff4ff; border: 1px solid #d8e4ff; border-radius: 99px; padding: 9px 13px; cursor: pointer; }
+.suggestions button:hover { background: #e4edff; }
+
+.message { padding: 18px 20px; }
+.message.user { background: #edf4ff; border-color: #d4e3ff; }
+.message.error { border-color: #f4c8c7; background: #fff5f5; }
+.message-label { margin: 0 0 8px; color: #5d687a; font-size: .78rem; font-weight: 700; }
+.message-content { white-space: pre-wrap; line-height: 1.7; }
+.sources { margin-top: 16px; border-top: 1px solid #e9edf4; padding-top: 14px; }
+.sources summary { color: #315ebd; cursor: pointer; font-weight: 700; }
+.source-card { margin-top: 10px; padding: 12px; background: #f7f9fc; border-radius: 10px; }
+.source-meta { margin: 0 0 7px; color: #5d687a; font-size: .82rem; }
+.source-text { margin: 0; color: #39465a; font-size: .9rem; white-space: pre-wrap; }
+
+.question-form { position: sticky; bottom: 16px; margin-top: 22px; padding: 12px; }
+textarea { width: 100%; resize: vertical; border: 0; outline: 0; padding: 7px; color: #18202c; background: transparent; }
+.form-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #6e7786; font-size: .8rem; }
+.form-footer button { border: 0; border-radius: 10px; padding: 10px 16px; color: white; background: #315ebd; cursor: pointer; font-weight: 700; }
+.form-footer button:hover { background: #274e9e; }
+.form-footer button:disabled { cursor: wait; opacity: .65; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+
+@media (max-width: 560px) {
+  .app-shell { width: min(100% - 24px, 900px); padding-top: 34px; }
+  .form-footer { align-items: flex-end; }
+  .form-footer span { max-width: 170px; }
+}

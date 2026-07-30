@@ -1,0 +1,22 @@
+[
+  {
+    "question": "什么是开放定址法？",
+    "expected_source": "数据结构.md"
+  },
+  {
+    "question": "线性探测再散列的增量序列是什么？",
+    "expected_source": "数据结构.md"
+  },
+  {
+    "question": "除留余数法的哈希函数怎么计算？",
+    "expected_source": "数据结构.md"
+  },
+  {
+    "question": "链地址法适合什么情况？",
+    "expected_source": "数据结构.md"
+  },
+  {
+    "question": "哈希表查找效率主要受什么影响？",
+    "expected_source": "数据结构.md"
+  }
+]

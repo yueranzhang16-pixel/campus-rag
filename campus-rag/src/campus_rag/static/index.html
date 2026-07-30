@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>校园知识库问答</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero">
+        <p class="eyebrow">CAMPUS RAG</p>
+        <h1>校园知识库问答</h1>
+        <p>回答只依据你的课程笔记，并附带可追溯的资料来源。</p>
+      </section>
+
+      <section id="conversation" class="conversation" aria-live="polite">
+        <article class="welcome-card">
+          <h2>可以问我什么？</h2>
+          <div class="suggestions">
+            <button type="button" data-question="什么是顺序表？">什么是顺序表？</button>
+            <button type="button" data-question="线性探测再散列的增量序列是什么？">线性探测再散列的增量序列是什么？</button>
+            <button type="button" data-question="空串和空格串有什么区别？">空串和空格串有什么区别？</button>
+          </div>
+        </article>
+      </section>
+
+      <form id="question-form" class="question-form">
+        <label class="sr-only" for="question">输入你的问题</label>
+        <textarea id="question" name="question" rows="2" maxlength="500" placeholder="例如：顺序队列的假溢出是什么？" required></textarea>
+        <div class="form-footer">
+          <span>回答会调用 DeepSeek API。</span>
+          <button id="submit-button" type="submit">发送问题</button>
+        </div>
+      </form>
+    </main>
+    <template id="message-template">
+      <article class="message">
+        <p class="message-label"></p>
+        <div class="message-content"></div>
+      </article>
+    </template>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,17 @@
+[
+  {
+    "question": "堆栈遵循什么操作顺序？",
+    "expected_terms": ["后进先出"],
+    "expected_sources": ["堆栈.md"]
+  },
+  {
+    "question": "顺序栈中 top 等于 -1 表示什么？",
+    "expected_terms": ["空栈"],
+    "expected_sources": ["堆栈.md"]
+  },
+  {
+    "question": "顺序循环队列的初始状态是什么？",
+    "expected_terms": ["front", "rear", "0"],
+    "expected_sources": ["队列.md"]
+  }
+]

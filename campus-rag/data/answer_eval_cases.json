@@ -1,0 +1,7 @@
+[
+  {"question":"顺序表采用什么样的存储方式？","expected_terms":["地址连续"],"expected_sources":["线性表.md"]},
+  {"question":"线性探测再散列的增量序列是什么？","expected_terms":["1","2","3"],"expected_sources":["数据结构.md"]},
+  {"question":"什么是顺序队列的假溢出？","expected_terms":["假溢出"],"expected_sources":["队列.md"]},
+  {"question":"空串和空格串有什么区别？","expected_terms":["空串"],"expected_sources":["串.md"]},
+  {"question":"树中结点数和所有结点度数之和有什么关系？","expected_terms":["加1"],"expected_sources":["树.md"]}
+]

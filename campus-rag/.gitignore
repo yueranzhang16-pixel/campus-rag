@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.env
+data/index.json
+data/embedding_index.json
+reports/
+models/
+tmp*/
