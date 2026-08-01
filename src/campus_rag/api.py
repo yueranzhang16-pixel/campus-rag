@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import time
+from hashlib import sha256
 from functools import cached_property
 from pathlib import Path
 from typing import Literal, Protocol
@@ -12,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .cli import load_embedding_index, load_index
-from .generation import DEFAULT_MODEL, DeepSeekGenerator
+from .generation import DEFAULT_MODEL, PROMPT_VERSION, DeepSeekGenerator
 from .history import AnswerHistory, FeedbackHistory
 from .hybrid import HybridRetriever
 from .retrieval import SearchResult
@@ -52,6 +53,7 @@ class RetrievalResponse(BaseModel):
 class AnswerResponse(RetrievalResponse):
     answer: str = Field(description="DeepSeek 基于证据生成的回答，包含来源标注")
     answer_id: str | None = Field(description="本地问答记录编号，用于提交反馈")
+    trace_id: str | None = Field(description="本次问答的本地追踪编号；当前与 answer_id 相同")
 
 
 class HistoryResponse(BaseModel):
@@ -104,14 +106,48 @@ class CampusRagService:
     def retrieve(self, question: str, top_k: int) -> list[SearchResult]:
         return self.retriever.search(question, top_k)
 
+    @staticmethod
+    def _index_signature(path: Path) -> dict:
+        digest = sha256()
+        with path.open("rb") as file:
+            for block in iter(lambda: file.read(1024 * 1024), b""):
+                digest.update(block)
+        return {"name": path.name, "sha256": digest.hexdigest()[:12]}
+
+    @cached_property
+    def index_versions(self) -> dict:
+        return {
+            "embedding": self._index_signature(self.embedding_index),
+            "lexical": self._index_signature(self.lexical_index),
+        }
+
     def answer(self, question: str, top_k: int) -> tuple[str, list[SearchResult], str | None]:
         started = time.perf_counter()
         evidence = self.retrieve(question, top_k)
-        answer = self.generator.answer(question, evidence)
+        usage = {}
+        generator = self.generator
+        if isinstance(generator, DeepSeekGenerator):
+            generated = generator.answer_with_usage(question, evidence)
+            answer, usage = generated.content, generated.usage
+        else:
+            answer = generator.answer(question, evidence)
         answer_id = None
         if self.history:
             try:
-                answer_id = self.history.append(question, answer, evidence, (time.perf_counter() - started) * 1000)
+                answer_id = self.history.append(
+                    question,
+                    answer,
+                    evidence,
+                    (time.perf_counter() - started) * 1000,
+                    trace={
+                        "retriever": "hybrid_rrf",
+                        "top_k": top_k,
+                        "model": self.model,
+                        "prompt_version": PROMPT_VERSION,
+                        "index_versions": self.index_versions,
+                        "usage": usage,
+                    },
+                )
             except OSError:
                 pass
         return answer, evidence, answer_id
@@ -192,7 +228,7 @@ def create_app(service: CampusRagService | None = None) -> FastAPI:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except RuntimeError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
-        return AnswerResponse(answer=text, answer_id=answer_id, evidence=evidence_response(evidence))
+        return AnswerResponse(answer=text, answer_id=answer_id, trace_id=answer_id, evidence=evidence_response(evidence))
 
     return app
 

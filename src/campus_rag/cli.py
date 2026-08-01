@@ -12,6 +12,7 @@ from .history import AnswerHistory, FeedbackHistory
 from .hybrid import HybridRetriever
 from .reranking import DEFAULT_RERANKER, RerankingRetriever
 from .retrieval import TfidfIndex, load_chunks
+from .trace_report import build_trace_report
 
 
 def load_index(path: Path) -> TfidfIndex:
@@ -248,6 +249,22 @@ def command_feedback_report(args: argparse.Namespace) -> None:
         print(f"报告已保存：{destination}")
 
 
+def command_trace_report(args: argparse.Namespace) -> None:
+    report = build_trace_report(AnswerHistory(Path(args.history)).all(), args.limit)
+    print(f"Trace 总数：{report['total_traces']}")
+    print(f"平均耗时：{report['latency_ms']['average']} ms；P95：{report['latency_ms']['p95']} ms")
+    print(f"缺少完整追踪字段的旧记录：{report['incomplete_trace_count']}")
+    if report["slow_traces"]:
+        print("最慢请求：")
+        for item in report["slow_traces"]:
+            print(f"- {item['latency_ms']} ms | {item['trace_id']} | {item['question']}")
+    if args.report:
+        destination = Path(args.report)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"报告已保存：{destination}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Campus RAG offline retrieval baseline")
     commands = parser.add_subparsers(required=True)
@@ -331,6 +348,11 @@ def build_parser() -> argparse.ArgumentParser:
     feedback_report.add_argument("--limit", type=int, default=20)
     feedback_report.add_argument("--report", help="Optional JSON path for the feedback report")
     feedback_report.set_defaults(handler=command_feedback_report)
+    trace_report = commands.add_parser("trace-report", help="Summarize local answer traces without calling an LLM")
+    trace_report.add_argument("--history", default="logs/answer_history.jsonl")
+    trace_report.add_argument("--limit", type=int, default=10)
+    trace_report.add_argument("--report", help="Optional JSON path for the trace report")
+    trace_report.set_defaults(handler=command_trace_report)
     return parser
 
 

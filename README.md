@@ -125,3 +125,16 @@ python -m campus_rag.cli feedback-report --history logs/answer_history.jsonl --f
 ```
 
 报告会把点踩记录关联回原问题、回答和检索来源。处理顺序是：先看“资料缺失”并补文档，再处理“答非所问”并检查检索，最后将修复过的问题加入评测集，避免后续改动导致回退。
+
+## 请求追踪
+
+从当前版本开始，每次 `/answer` 都会产生一个 `trace_id`（当前与 `answer_id` 相同），并在本地问答日志中记录：检索证据的排名与分数、检索器名称、模型名、提示词版本、索引哈希、模型返回的 token 用量（若 API 提供）和总耗时。
+
+查看本地 Trace 概览（不调用 DeepSeek）：
+
+```powershell
+$env:PYTHONPATH="src"
+python -m campus_rag.cli trace-report --history logs/answer_history.jsonl --report reports/trace_report.json
+```
+
+它会显示平均耗时、P95 耗时、最慢请求和缺少追踪字段的旧记录。一次回答出现问题时，优先按 Trace 判断：没有正确证据是检索或资料问题；证据正确但回答错误是生成或提示词问题；耗时异常则检查模型调用或向量模型首次加载。

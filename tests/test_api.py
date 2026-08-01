@@ -56,6 +56,7 @@ class ApiTests(unittest.TestCase):
         self.assertIn("线性表.md", response.json()["answer"])
         self.assertEqual(response.json()["evidence"][0]["source"], "线性表.md")
         self.assertTrue(response.json()["answer_id"])
+        self.assertEqual(response.json()["trace_id"], response.json()["answer_id"])
 
     def test_history_keeps_answer_metadata_locally(self):
         self.client.post("/answer", json={"question": "什么是顺序表？"})
@@ -64,6 +65,9 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(record["question"], "什么是顺序表？")
         self.assertEqual(record["sources"], ["线性表.md"])
         self.assertIn("latency_ms", record)
+        self.assertEqual(record["retrieval"][0]["score"], 0.9)
+        self.assertEqual(record["trace"]["retriever"], "hybrid_rrf")
+        self.assertIn("embedding", record["trace"]["index_versions"])
 
     def test_feedback_is_linked_to_answer_id(self):
         answer = self.client.post("/answer", json={"question": "什么是顺序表？"}).json()

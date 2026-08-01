@@ -11,6 +11,13 @@ from .retrieval import SearchResult
 
 DEFAULT_MODEL = "deepseek-v4-flash"
 DEFAULT_BASE_URL = "https://api.deepseek.com"
+PROMPT_VERSION = "grounded-v1"
+
+
+@dataclass
+class GeneratedAnswer:
+    content: str
+    usage: dict[str, int]
 
 
 def build_messages(question: str, evidence: list[SearchResult]) -> list[dict[str, str]]:
@@ -59,6 +66,9 @@ class DeepSeekGenerator:
         return cls(api_key=api_key, model=model)
 
     def answer(self, question: str, evidence: list[SearchResult]) -> str:
+        return self.answer_with_usage(question, evidence).content
+
+    def answer_with_usage(self, question: str, evidence: list[SearchResult]) -> GeneratedAnswer:
         payload = json.dumps(
             {"model": self.model, "messages": build_messages(question, evidence), "temperature": 0.2},
             ensure_ascii=False,
@@ -79,4 +89,8 @@ class DeepSeekGenerator:
         except HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"DeepSeek API 请求失败（HTTP {exc.code}）：{detail}") from exc
-        return data["choices"][0]["message"]["content"]
+        usage = data.get("usage") or {}
+        return GeneratedAnswer(
+            content=data["choices"][0]["message"]["content"],
+            usage={key: value for key, value in usage.items() if isinstance(value, int)},
+        )
