@@ -12,7 +12,7 @@ from .history import AnswerHistory, FeedbackHistory
 from .hybrid import HybridRetriever
 from .judge import GroundedAnswerJudge
 from .reranking import DEFAULT_RERANKER, RerankingRetriever
-from .retrieval import TfidfIndex, load_chunks
+from .retrieval import TfidfIndex, load_chunks, load_parent_child_corpus
 from .trace_report import build_trace_report
 
 
@@ -25,7 +25,8 @@ def load_embedding_index(path: Path) -> EmbeddingIndex:
 
 
 def command_index(args: argparse.Namespace) -> None:
-    index = TfidfIndex.build(load_chunks(Path(args.docs)))
+    chunks, parents = load_parent_child_corpus(Path(args.docs))
+    index = TfidfIndex.build(chunks, parents)
     destination = Path(args.output)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(index.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
@@ -54,7 +55,8 @@ def print_results(results: list, latency_ms: float) -> None:
 
 
 def command_embedding_index(args: argparse.Namespace) -> None:
-    index = EmbeddingIndex.build(load_chunks(Path(args.docs)), model_name=args.model)
+    chunks, parents = load_parent_child_corpus(Path(args.docs))
+    index = EmbeddingIndex.build(chunks, model_name=args.model, parents=parents)
     destination = Path(args.output)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(index.to_dict(), ensure_ascii=False), encoding="utf-8")

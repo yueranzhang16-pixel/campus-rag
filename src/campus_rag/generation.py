@@ -22,7 +22,12 @@ class GeneratedAnswer:
 
 def build_messages(question: str, evidence: list[SearchResult]) -> list[dict[str, str]]:
     passages = "\n\n".join(
-        f"[来源：{item.source}｜章节：{item.context}]\n{item.text}" for item in evidence
+        (
+            f"[来源：{item.source}｜章节：{item.context}]\n"
+            f"命中片段：\n{item.text}"
+            + (f"\n\n相邻父级上下文：\n{item.parent_text}" if item.parent_text else "")
+        )
+        for item in evidence
     )
     return [
         {

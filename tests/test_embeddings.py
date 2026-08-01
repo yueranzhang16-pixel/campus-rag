@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 
 from campus_rag.embeddings import EmbeddingIndex
-from campus_rag.retrieval import Chunk
+from campus_rag.retrieval import Chunk, ParentChunk
 
 
 class FakeEncoder:
@@ -23,3 +23,16 @@ class EmbeddingIndexTests(unittest.TestCase):
         )
         result = index.search("树有哪些遍历方式", top_k=1)
         self.assertEqual(result[0].source, "tree.md")
+
+    def test_search_expands_parent_context(self):
+        parent = ParentChunk("tree.md::树", "tree.md", "树", ["差异：", "数据位于叶子结点。"])
+        index = EmbeddingIndex(
+            chunks=[Chunk("tree.md", "差异：", "树 B+树", parent.id, 0)],
+            vectors=np.asarray([[1.0, 0.0]], dtype=np.float32),
+            parents={parent.id: parent},
+            _encoder=FakeEncoder(),
+        )
+
+        result = index.search("树的差异", top_k=1)
+
+        self.assertEqual(result[0].parent_text, "数据位于叶子结点。")

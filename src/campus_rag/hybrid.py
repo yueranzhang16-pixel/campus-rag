@@ -50,6 +50,7 @@ class HybridRetriever:
                 item.text,
                 round(score + self._content_adjustment(item, prefer_explanations), 4),
                 item.context,
+                item.parent_text,
             )
             for score, item in ranked[:top_k]
         ]

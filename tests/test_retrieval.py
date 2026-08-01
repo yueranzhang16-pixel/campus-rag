@@ -1,7 +1,7 @@
 import unittest
 from campus_rag import cli
 
-from campus_rag.retrieval import Chunk, TfidfIndex, split_markdown_chunks, tokenize
+from campus_rag.retrieval import Chunk, TfidfIndex, split_markdown_chunks, split_markdown_document, tokenize
 
 
 class RetrievalTests(unittest.TestCase):
@@ -43,6 +43,26 @@ class RetrievalTests(unittest.TestCase):
         self.assertIn("树的基本操作", chunks[0].context)
         self.assertIn("遍历", chunks[0].context)
         self.assertIn("先序", chunks[0].context)
+
+    def test_parent_child_retrieval_expands_a_heading_with_nearby_details(self):
+        chunks, parents = split_markdown_document(
+            "tree.md",
+            "## B树与B+树\n### B+树\n差异：\n\n1. 数据只存于叶子结点。\n\n2. 叶子结点按关键字链接。",
+        )
+        index = TfidfIndex.build(chunks, parents)
+
+        result = index.search("B树和B+树有什么差异？", top_k=1)[0]
+
+        self.assertEqual(result.text, "差异：")
+        self.assertIn("数据只存于叶子结点", result.parent_text)
+        self.assertIn("叶子结点按关键字链接", result.parent_text)
+
+    def test_parent_metadata_survives_index_serialization(self):
+        chunks, parents = split_markdown_document("tree.md", "## 树\n定义：\n\n树由结点组成。")
+        restored = TfidfIndex.from_dict(TfidfIndex.build(chunks, parents).to_dict())
+
+        self.assertTrue(restored.parents)
+        self.assertEqual(restored.search("树的定义", top_k=1)[0].parent_text, "树由结点组成。")
 
     def test_eval_reports_per_case_hits(self):
         report = cli.evaluate(

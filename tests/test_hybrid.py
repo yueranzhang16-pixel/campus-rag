@@ -44,6 +44,14 @@ class HybridRetrieverTests(unittest.TestCase):
 
         self.assertEqual(results[0].source, "hash.md")
 
+    def test_preserves_parent_context_from_retrieval_results(self):
+        result = SearchResult("tree.md", "差异：", 0.9, "B+树", "数据位于叶子结点。")
+        retriever = HybridRetriever(FakeIndex([result]), FakeIndex([result]))
+
+        fused = retriever.search("B树和B+树的差异", top_k=1)
+
+        self.assertEqual(fused[0].parent_text, "数据位于叶子结点。")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -39,6 +39,7 @@ class Evidence(BaseModel):
     context: str = Field(description="证据所在的文档章节")
     score: float = Field(description="混合检索分数，仅用于排序比较")
     text: str = Field(description="原始证据片段")
+    parent_text: str = Field(default="", description="与命中片段相邻的父级上下文")
 
 
 class QuestionRequest(BaseModel):

@@ -151,3 +151,17 @@ python -m campus_rag.cli judge-eval --index data/embedding_index.json --lexical-
 当前评测集有 5 题，因此该命令会产生约 10 次 DeepSeek 调用（每题 1 次生成 + 1 次裁判）。可以用 `--judge-model` 指定不同于回答模型的裁判模型，以减轻“模型给自己高分”的偏差。
 
 裁判分数不是事实真相：低置信度、低分或与人工反馈冲突的案例必须人工复核。每次修改裁判提示词都要保留版本号并重跑同一评测集，才能比较结果。
+
+## Parent-Child RAG
+
+索引仍以段落级“子块”进行检索，以保持术语命中的精度；命中后，系统会一并传给模型该子块所在章节中的相邻正文（父级上下文）。这避免了只检索到“差异：”等标题、却遗漏后续定义或列表的碎片化问题。
+
+每次升级文档切分算法或修改 `data/docs/` 后，都必须重建两套索引：
+
+```powershell
+$env:PYTHONPATH="src"
+python -m campus_rag.cli index --docs data/docs --output data/index.json
+python -m campus_rag.cli embedding-index --docs data/docs --output data/embedding_index.json
+```
+
+重建后需要重启服务，或在使用 `uvicorn --reload` 时等待它自动重载。网页的“查看检索证据”会显示命中片段及其相邻上下文。

@@ -11,7 +11,14 @@ class GenerationTests(unittest.TestCase):
             [SearchResult("线性表.md", "顺序表使用连续存储单元。", 0.9, "线性表 顺序表")],
         )
         self.assertIn("线性表.md", messages[1]["content"])
-        self.assertIn("顺序表使用连续存储单元", messages[1]["content"])
+
+    def test_prompt_includes_parent_context_when_available(self):
+        messages = build_messages(
+            "B树和B+树的差异是什么？",
+            [SearchResult("数据结构.md", "差异：", 0.5, "B+树", "1. 数据只存于叶子结点。")],
+        )
+        self.assertIn("相邻父级上下文", messages[1]["content"])
+        self.assertIn("数据只存于叶子结点", messages[1]["content"])
 
     def test_answer_check_requires_terms_and_citation(self):
         check = check_answer("地址连续的存储单元。[线性表.md]", ["地址连续"], ["线性表.md"])

@@ -26,6 +26,12 @@ function addMessage(label, content, type = "assistant", evidence = [], answerId 
       text.className = "source-text";
       text.textContent = item.text;
       card.append(meta, text);
+      if (item.parent_text) {
+        const parent = document.createElement("p");
+        parent.className = "source-parent-text";
+        parent.textContent = `相邻上下文：${item.parent_text}`;
+        card.append(parent);
+      }
       details.append(card);
     });
     node.append(details);

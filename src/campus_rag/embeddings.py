@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import numpy as np
 
-from .retrieval import Chunk, SearchResult, TfidfIndex
+from .retrieval import Chunk, ParentChunk, SearchResult, TfidfIndex
 
 DEFAULT_MODEL = "BAAI/bge-small-zh-v1.5"
 QUERY_INSTRUCTION = "为这个句子生成表示以用于检索相关文章："
@@ -18,11 +18,17 @@ class EmbeddingIndex:
     chunks: list[Chunk]
     vectors: np.ndarray
     model_name: str = DEFAULT_MODEL
+    parents: dict[str, ParentChunk] = field(default_factory=dict)
     _encoder: Any | None = None
 
     @classmethod
-    def build(cls, chunks: list[Chunk], model_name: str = DEFAULT_MODEL) -> "EmbeddingIndex":
-        index = cls(chunks=chunks, vectors=np.empty((0, 0)), model_name=model_name)
+    def build(
+        cls,
+        chunks: list[Chunk],
+        model_name: str = DEFAULT_MODEL,
+        parents: dict[str, ParentChunk] | None = None,
+    ) -> "EmbeddingIndex":
+        index = cls(chunks=chunks, vectors=np.empty((0, 0)), model_name=model_name, parents=parents or {})
         encoder = index._get_encoder()
         passages = [TfidfIndex._searchable_text(chunk) for chunk in chunks]
         index.vectors = np.asarray(
@@ -59,9 +65,18 @@ class EmbeddingIndex:
                 text=self.chunks[position].text,
                 context=self.chunks[position].context,
                 score=round(float(scores[position]), 4),
+                parent_text=self._parent_window(self.chunks[position]),
             )
             for position in ranked
         ]
+
+    def _parent_window(self, chunk: Chunk, radius: int = 2) -> str:
+        parent = self.parents.get(chunk.parent_id)
+        if not parent:
+            return ""
+        start = max(0, chunk.parent_position - radius)
+        end = min(len(parent.segments), chunk.parent_position + radius + 1)
+        return "\n\n".join(segment for segment in parent.segments[start:end] if segment != chunk.text)
 
     def to_dict(self) -> dict:
         return {
@@ -69,6 +84,7 @@ class EmbeddingIndex:
             "model_name": self.model_name,
             "chunks": [asdict(chunk) for chunk in self.chunks],
             "vectors": self.vectors.tolist(),
+            "parents": [asdict(parent) for parent in self.parents.values()],
         }
 
     @classmethod
@@ -77,4 +93,5 @@ class EmbeddingIndex:
             chunks=[Chunk(**chunk) for chunk in data["chunks"]],
             vectors=np.asarray(data["vectors"], dtype=np.float32),
             model_name=data.get("model_name", DEFAULT_MODEL),
+            parents={parent["id"]: ParentChunk(**parent) for parent in data.get("parents", [])},
         )
