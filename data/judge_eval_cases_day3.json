@@ -21,7 +21,7 @@
   },
   {
     "question": "B树和B+树有什么区别？",
-    "expected_terms": ["资料不足"],
+    "expected_terms": ["叶子结点", "关键字", "索引"],
     "expected_sources": ["数据结构.md"]
   }
 ]
