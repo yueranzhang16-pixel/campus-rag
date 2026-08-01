@@ -72,6 +72,23 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.json()["record"]["rating"], "up")
         self.assertEqual(response.json()["record"]["answer_id"], answer["answer_id"])
 
+    def test_down_feedback_requires_a_reason_and_keeps_the_note(self):
+        answer = self.client.post("/answer", json={"question": "什么是顺序表？"}).json()
+        missing_reason = self.client.post("/feedback", json={"answer_id": answer["answer_id"], "rating": "down"})
+        self.assertEqual(missing_reason.status_code, 422)
+        response = self.client.post(
+            "/feedback",
+            json={
+                "answer_id": answer["answer_id"],
+                "rating": "down",
+                "reason": "missing_knowledge",
+                "note": "资料没有覆盖这个概念。",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["record"]["reason"], "missing_knowledge")
+        self.assertEqual(response.json()["record"]["note"], "资料没有覆盖这个概念。")
+
     def test_rejects_empty_question(self):
         response = self.client.post("/retrieve", json={"question": ""})
         self.assertEqual(response.status_code, 422)

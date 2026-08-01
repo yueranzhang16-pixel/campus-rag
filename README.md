@@ -112,3 +112,16 @@ README.md                            # 项目说明
 - 扩充到更多真实课程资料和 20+ 道评测题。
 - 记录问答日志、延迟和 API 成本。
 - 加入用户反馈，持续沉淀失败案例并回归测试。
+
+## 反馈闭环
+
+每条回答都可以点赞或点踩。点踩时可选择“资料缺失、答非所问、内容错误、表达不清”，并可留下补充说明；这些记录只保存到本地 `logs/feedback.jsonl`，不会提交到 GitHub。
+
+查看近期的反馈统计与待复盘问题（不调用 DeepSeek、不产生 API 费用）：
+
+```powershell
+$env:PYTHONPATH="src"
+python -m campus_rag.cli feedback-report --history logs/answer_history.jsonl --feedback logs/feedback.jsonl --report reports/feedback_report.json
+```
+
+报告会把点踩记录关联回原问题、回答和检索来源。处理顺序是：先看“资料缺失”并补文档，再处理“答非所问”并检查检索，最后将修复过的问题加入评测集，避免后续改动导致回退。

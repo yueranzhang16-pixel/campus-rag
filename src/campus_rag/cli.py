@@ -6,7 +6,9 @@ import time
 from pathlib import Path
 
 from .embeddings import DEFAULT_MODEL, EmbeddingIndex
+from .feedback_report import REASON_LABELS, build_feedback_report
 from .generation import DEFAULT_MODEL as DEFAULT_DEEPSEEK_MODEL, DeepSeekGenerator, check_answer
+from .history import AnswerHistory, FeedbackHistory
 from .hybrid import HybridRetriever
 from .reranking import DEFAULT_RERANKER, RerankingRetriever
 from .retrieval import TfidfIndex, load_chunks
@@ -217,6 +219,35 @@ def command_answer_eval(args: argparse.Namespace) -> None:
     Path(args.report).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def command_feedback_report(args: argparse.Namespace) -> None:
+    report = build_feedback_report(
+        AnswerHistory(Path(args.history)).all(),
+        FeedbackHistory(Path(args.feedback)).all(),
+    )
+    queue = report["review_queue"][: args.limit]
+    print(f"反馈总数：{report['total_feedback']}")
+    print(f"有帮助：{report['ratings']['up']}；需要改进：{report['ratings']['down']}")
+    if report["reasons"]:
+        print("点踩原因：")
+        for reason, count in sorted(report["reasons"].items(), key=lambda item: (-item[1], item[0])):
+            print(f"- {REASON_LABELS.get(reason, reason)}：{count}")
+    if queue:
+        print("待复盘问题：")
+        for number, item in enumerate(queue, 1):
+            print(f"[{number}] {item['reason_label']} | {item['question']}")
+            if item["sources"]:
+                print(f"    证据：{', '.join(item['sources'])}")
+            if item["note"]:
+                print(f"    备注：{item['note']}")
+    else:
+        print("暂无点踩记录。")
+    if args.report:
+        destination = Path(args.report)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"报告已保存：{destination}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Campus RAG offline retrieval baseline")
     commands = parser.add_subparsers(required=True)
@@ -294,6 +325,12 @@ def build_parser() -> argparse.ArgumentParser:
     answer_eval.add_argument("--report", required=True); answer_eval.add_argument("--top-k", type=int, default=3)
     answer_eval.add_argument("--model", default=DEFAULT_DEEPSEEK_MODEL); answer_eval.set_defaults(handler=command_answer_eval)
     answer_eval.add_argument("--lexical-index", default="data/index.json")
+    feedback_report = commands.add_parser("feedback-report", help="Summarize local user feedback without calling an LLM")
+    feedback_report.add_argument("--history", default="logs/answer_history.jsonl")
+    feedback_report.add_argument("--feedback", default="logs/feedback.jsonl")
+    feedback_report.add_argument("--limit", type=int, default=20)
+    feedback_report.add_argument("--report", help="Optional JSON path for the feedback report")
+    feedback_report.set_defaults(handler=command_feedback_report)
     return parser
 
 

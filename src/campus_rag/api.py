@@ -61,6 +61,11 @@ class HistoryResponse(BaseModel):
 class FeedbackRequest(BaseModel):
     answer_id: str = Field(min_length=1, description="回答记录编号")
     rating: Literal["up", "down"] = Field(description="up 表示有帮助，down 表示有问题")
+    reason: Literal["missing_knowledge", "irrelevant", "incorrect", "unclear"] | None = Field(
+        default=None,
+        description="点踩原因；点踩时必填",
+    )
+    note: str = Field(default="", max_length=300, description="可选补充说明")
 
 
 class FeedbackResponse(BaseModel):
@@ -153,8 +158,10 @@ def create_app(service: CampusRagService | None = None) -> FastAPI:
     def submit_feedback(request: FeedbackRequest) -> FeedbackResponse:
         if not service.feedback:
             raise HTTPException(status_code=503, detail="当前服务未启用本地反馈记录。")
+        if request.rating == "down" and not request.reason:
+            raise HTTPException(status_code=422, detail="点踩时请选择原因。")
         try:
-            record = service.feedback.append(request.answer_id, request.rating)
+            record = service.feedback.append(request.answer_id, request.rating, request.reason, request.note.strip())
         except OSError as exc:
             raise HTTPException(status_code=503, detail="本地反馈记录写入失败。") from exc
         return FeedbackResponse(record=record)

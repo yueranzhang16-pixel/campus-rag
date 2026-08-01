@@ -34,17 +34,56 @@ function addMessage(label, content, type = "assistant", evidence = [], answerId 
     const feedback = document.createElement("div");
     feedback.className = "feedback";
     feedback.textContent = "这条回答有帮助吗？";
+    const sendFeedback = async (rating, reason = null, note = "") => {
+      const response = await fetch("/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answer_id: answerId, rating, reason, note }),
+      });
+      if (!response.ok) throw new Error();
+      feedback.textContent = "已记录反馈，感谢。";
+    };
     [["👍 有帮助", "up"], ["👎 有问题", "down"]].forEach(([label, rating]) => {
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = label;
       button.addEventListener("click", async () => {
-        const response = await fetch("/feedback", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ answer_id: answerId, rating }),
+        if (rating === "up") {
+          try {
+            await sendFeedback("up");
+          } catch {
+            feedback.textContent = "反馈保存失败，请稍后重试。";
+          }
+          return;
+        }
+        feedback.textContent = "这条回答哪里需要改进？";
+        const panel = document.createElement("div");
+        panel.className = "feedback-detail";
+        const select = document.createElement("select");
+        [["missing_knowledge", "资料缺失"], ["irrelevant", "答非所问"], ["incorrect", "内容错误"], ["unclear", "表达不清"]].forEach(([value, text]) => {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = text;
+          select.append(option);
         });
-        feedback.textContent = response.ok ? "已记录反馈，感谢。" : "反馈保存失败，请稍后重试。";
+        const note = document.createElement("textarea");
+        note.rows = 2;
+        note.maxLength = 300;
+        note.placeholder = "可选：补充说明哪里有问题";
+        const submit = document.createElement("button");
+        submit.type = "button";
+        submit.textContent = "提交反馈";
+        submit.addEventListener("click", async () => {
+          submit.disabled = true;
+          try {
+            await sendFeedback("down", select.value, note.value.trim());
+          } catch {
+            submit.disabled = false;
+            feedback.prepend(document.createTextNode("保存失败，请重试。"));
+          }
+        });
+        panel.append(select, note, submit);
+        feedback.append(panel);
       });
       feedback.append(button);
     });

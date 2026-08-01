@@ -35,6 +35,10 @@ h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.25rem); letter-spacing: -.04em; }
 .feedback { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 14px; color: #5d687a; font-size: .86rem; }
 .feedback button { border: 1px solid #d8e4ff; border-radius: 99px; padding: 6px 10px; background: #f4f7ff; color: #315ebd; cursor: pointer; }
 .feedback button:hover { background: #e4edff; }
+.feedback-detail { display: grid; width: 100%; gap: 8px; padding: 10px; background: #f7f9fc; border-radius: 10px; }
+.feedback-detail select, .feedback-detail textarea { width: 100%; border: 1px solid #d8e0ed; border-radius: 8px; padding: 8px; color: #18202c; background: white; }
+.feedback-detail textarea { resize: vertical; min-height: 52px; }
+.feedback-detail button { justify-self: start; }
 
 .question-form { position: sticky; bottom: 16px; margin-top: 22px; padding: 12px; }
 textarea { width: 100%; resize: vertical; border: 0; outline: 0; padding: 7px; color: #18202c; background: transparent; }

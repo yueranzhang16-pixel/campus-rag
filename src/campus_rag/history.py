@@ -8,6 +8,19 @@ from uuid import uuid4
 from .retrieval import SearchResult
 
 
+def read_jsonl(path: Path) -> list[dict]:
+    """Read valid records from a local JSONL file without failing on a bad line."""
+    if not path.is_file():
+        return []
+    records = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return records
+
+
 class AnswerHistory:
     """Append-only local history for inspecting real user questions and failures."""
 
@@ -29,15 +42,10 @@ class AnswerHistory:
         return record["id"]
 
     def latest(self, limit: int = 20) -> list[dict]:
-        if not self.path.is_file():
-            return []
-        records = []
-        for line in self.path.read_text(encoding="utf-8").splitlines():
-            try:
-                records.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-        return list(reversed(records[-limit:]))
+        return list(reversed(read_jsonl(self.path)[-limit:]))
+
+    def all(self) -> list[dict]:
+        return read_jsonl(self.path)
 
 
 class FeedbackHistory:
@@ -46,10 +54,12 @@ class FeedbackHistory:
     def __init__(self, path: Path):
         self.path = path
 
-    def append(self, answer_id: str, rating: str) -> dict:
+    def append(self, answer_id: str, rating: str, reason: str | None = None, note: str = "") -> dict:
         record = {
             "answer_id": answer_id,
             "rating": rating,
+            "reason": reason,
+            "note": note,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -58,12 +68,7 @@ class FeedbackHistory:
         return record
 
     def latest(self, limit: int = 20) -> list[dict]:
-        if not self.path.is_file():
-            return []
-        records = []
-        for line in self.path.read_text(encoding="utf-8").splitlines():
-            try:
-                records.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-        return list(reversed(records[-limit:]))
+        return list(reversed(read_jsonl(self.path)[-limit:]))
+
+    def all(self) -> list[dict]:
+        return read_jsonl(self.path)
