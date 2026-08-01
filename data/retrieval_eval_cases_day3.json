@@ -1,0 +1,14 @@
+[
+  {
+    "question": "二叉树都有哪些种类",
+    "expected_source": "二叉树分类.md"
+  },
+  {
+    "question": "满二叉树和完全二叉树有什么关系",
+    "expected_source": "二叉树分类.md"
+  },
+  {
+    "question": "什么是线索二叉树",
+    "expected_source": "二叉树分类.md"
+  }
+]
