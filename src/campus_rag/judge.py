@@ -29,6 +29,8 @@ def build_judge_messages(question: str, answer: str, evidence: list[SearchResult
             "content": (
                 "你是严格的课程知识库问答评测员。只能把‘检索证据’当作事实依据。"
                 "先在 justification 中指出支持或不支持评分的具体证据，再评分；不要奖励篇幅、语气自信或位置。"
+                "章节标题、问题句、图片链接或只有‘差异：’这类提纲，不能单独支撑任何具体事实；"
+                "若证据只有这些内容，资料不足的拒答是正确行为。"
                 "四项评分均为整数 1–5：1=严重不满足，3=部分满足，5=完全满足。"
                 "仅输出 JSON，不要 Markdown。"
             ),

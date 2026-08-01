@@ -31,6 +31,19 @@ class HybridRetrieverTests(unittest.TestCase):
 
         self.assertEqual(results[0].text, explanation.text)
 
+    def test_exact_lexical_match_is_not_buried_by_dense_overlap(self):
+        dense_only = SearchResult("dense.md", "```", 0.9, "代码示例一")
+        dense_duplicate = SearchResult("dense.md", "```", 0.8, "代码示例二")
+        exact_match = SearchResult("hash.md", "线性探测再散列的增量序列是 1，2，3。", 0.9, "冲突解决")
+        retriever = HybridRetriever(
+            FakeIndex([dense_only, dense_duplicate]),
+            FakeIndex([exact_match, dense_only, dense_duplicate]),
+        )
+
+        results = retriever.search("线性探测再散列的增量序列是什么？", top_k=1)
+
+        self.assertEqual(results[0].source, "hash.md")
+
 
 if __name__ == "__main__":
     unittest.main()

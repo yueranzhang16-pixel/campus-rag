@@ -13,6 +13,7 @@ class JudgeTests(unittest.TestCase):
             [SearchResult("线性表.md", "顺序表使用连续地址。", 0.9, "定义")],
         )
         self.assertIn("不要奖励篇幅", messages[0]["content"])
+        self.assertIn("章节标题", messages[0]["content"])
         self.assertIn("线性表.md", messages[1]["content"])
 
     def test_parser_normalizes_weighted_scores(self):
