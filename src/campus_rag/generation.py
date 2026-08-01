@@ -69,8 +69,11 @@ class DeepSeekGenerator:
         return self.answer_with_usage(question, evidence).content
 
     def answer_with_usage(self, question: str, evidence: list[SearchResult]) -> GeneratedAnswer:
+        return self.complete(build_messages(question, evidence), temperature=0.2)
+
+    def complete(self, messages: list[dict[str, str]], temperature: float = 0.0) -> GeneratedAnswer:
         payload = json.dumps(
-            {"model": self.model, "messages": build_messages(question, evidence), "temperature": 0.2},
+            {"model": self.model, "messages": messages, "temperature": temperature},
             ensure_ascii=False,
         ).encode("utf-8")
         request = Request(

@@ -10,6 +10,7 @@ from .feedback_report import REASON_LABELS, build_feedback_report
 from .generation import DEFAULT_MODEL as DEFAULT_DEEPSEEK_MODEL, DeepSeekGenerator, check_answer
 from .history import AnswerHistory, FeedbackHistory
 from .hybrid import HybridRetriever
+from .judge import GroundedAnswerJudge
 from .reranking import DEFAULT_RERANKER, RerankingRetriever
 from .retrieval import TfidfIndex, load_chunks
 from .trace_report import build_trace_report
@@ -265,6 +266,54 @@ def command_trace_report(args: argparse.Namespace) -> None:
         print(f"报告已保存：{destination}")
 
 
+def command_judge_eval(args: argparse.Namespace) -> None:
+    cases = json.loads(Path(args.cases).read_text(encoding="utf-8"))
+    if not cases:
+        raise ValueError("评测集不能为空")
+    retriever = load_hybrid_retriever(args.index, args.lexical_index)
+    generator = DeepSeekGenerator.from_environment(args.model)
+    judge = GroundedAnswerJudge.from_environment(args.judge_model)
+    records = []
+    for case in cases:
+        evidence = retriever.search(case["question"], args.top_k)
+        generated = generator.answer_with_usage(case["question"], evidence)
+        judgement = judge.evaluate(case["question"], generated.content, evidence)
+        deterministic = check_answer(
+            generated.content,
+            case.get("expected_terms", []),
+            case.get("expected_sources", []),
+        )
+        records.append(
+            {
+                "question": case["question"],
+                "answer": generated.content,
+                "evidence": [item.__dict__ for item in evidence],
+                "generation_usage": generated.usage,
+                "deterministic_checks": deterministic,
+                "judge": judgement,
+            }
+        )
+    average = sum(item["judge"]["weighted_score"] for item in records) / len(records)
+    report = {
+        "judge_prompt_version": "grounded-rubric-v1",
+        "generator_model": args.model,
+        "judge_model": args.judge_model,
+        "average_weighted_score": round(average, 3),
+        "pass_threshold": args.pass_threshold,
+        "passed": sum(item["judge"]["weighted_score"] >= args.pass_threshold for item in records),
+        "total": len(records),
+        "cases": records,
+    }
+    print(
+        f"judge score={report['average_weighted_score']:.3f}/5 "
+        f"pass@{args.pass_threshold:g}={report['passed']}/{report['total']}"
+    )
+    destination = Path(args.report)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"Judge report saved -> {destination}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Campus RAG offline retrieval baseline")
     commands = parser.add_subparsers(required=True)
@@ -353,6 +402,16 @@ def build_parser() -> argparse.ArgumentParser:
     trace_report.add_argument("--limit", type=int, default=10)
     trace_report.add_argument("--report", help="Optional JSON path for the trace report")
     trace_report.set_defaults(handler=command_trace_report)
+    judge_eval = commands.add_parser("judge-eval", help="Score generated RAG answers against retrieved evidence using an LLM judge")
+    judge_eval.add_argument("--index", required=True, help="Path to an embedding index")
+    judge_eval.add_argument("--lexical-index", default="data/index.json")
+    judge_eval.add_argument("--cases", required=True)
+    judge_eval.add_argument("--report", required=True)
+    judge_eval.add_argument("--top-k", type=int, default=3)
+    judge_eval.add_argument("--model", default=DEFAULT_DEEPSEEK_MODEL, help="Generator model")
+    judge_eval.add_argument("--judge-model", default=DEFAULT_DEEPSEEK_MODEL, help="Judge model; prefer a different model when available")
+    judge_eval.add_argument("--pass-threshold", type=float, default=4.0)
+    judge_eval.set_defaults(handler=command_judge_eval)
     return parser
 
 

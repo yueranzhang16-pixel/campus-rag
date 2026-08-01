@@ -138,3 +138,16 @@ python -m campus_rag.cli trace-report --history logs/answer_history.jsonl --repo
 ```
 
 它会显示平均耗时、P95 耗时、最慢请求和缺少追踪字段的旧记录。一次回答出现问题时，优先按 Trace 判断：没有正确证据是检索或资料问题；证据正确但回答错误是生成或提示词问题；耗时异常则检查模型调用或向量模型首次加载。
+
+## LLM 裁判评测
+
+`judge-eval` 会对每个评测题执行两步：先生成带引用的回答，再让独立的裁判调用只根据“问题、回答、检索证据”评分。评分采用固定 1–5 量表：忠实于证据（45%）、回答相关性（25%）、引用支撑（20%）和资料不足时的拒答正确性（10%）。裁判必须先写明评分依据，再给出分数。
+
+```powershell
+$env:PYTHONPATH="src"
+python -m campus_rag.cli judge-eval --index data/embedding_index.json --lexical-index data/index.json --cases data/judge_eval_cases_day3.json --report reports/judge_eval_day3.json
+```
+
+当前评测集有 5 题，因此该命令会产生约 10 次 DeepSeek 调用（每题 1 次生成 + 1 次裁判）。可以用 `--judge-model` 指定不同于回答模型的裁判模型，以减轻“模型给自己高分”的偏差。
+
+裁判分数不是事实真相：低置信度、低分或与人工反馈冲突的案例必须人工复核。每次修改裁判提示词都要保留版本号并重跑同一评测集，才能比较结果。
