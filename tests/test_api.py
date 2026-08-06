@@ -59,6 +59,25 @@ class ApiTests(unittest.TestCase):
         self.assertIn("api_key_configured", response.json())
         self.assertNotIn("api_key", response.json())
 
+    def test_index_signature_marks_missing_index_without_breaking_trace_setup(self):
+        signature = CampusRagService._index_signature(Path("missing-index.json"))
+        self.assertTrue(signature["missing"])
+        self.assertIsNone(signature["sha256"])
+
+    def test_injected_retriever_can_save_history_without_local_index_artifacts(self):
+        root = Path(__file__).resolve().parents[1] / "logs"
+        service = FakeService(
+            embedding_index=root / "missing-embedding.json",
+            lexical_index=root / "missing-lexical.json",
+            history_path=root / "missing_index_history.jsonl",
+            feedback_path=root / "missing_index_feedback.jsonl",
+        )
+        client = TestClient(create_app(service))
+        answer = client.post("/answer", json={"question": "什么是顺序表？"}).json()
+        self.assertTrue(answer["answer_id"])
+        history = client.get("/history").json()["records"]
+        self.assertTrue(history[0]["trace"]["index_versions"]["embedding"]["missing"])
+
     def test_root_returns_chat_page(self):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)

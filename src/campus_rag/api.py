@@ -136,11 +136,15 @@ class CampusRagService:
 
     @staticmethod
     def _index_signature(path: Path) -> dict:
+        if not path.is_file():
+            # Unit tests and diagnostics can provide an injected retriever
+            # without materializing the ignored local index artifacts.
+            return {"name": path.name, "sha256": None, "missing": True}
         digest = sha256()
         with path.open("rb") as file:
             for block in iter(lambda: file.read(1024 * 1024), b""):
                 digest.update(block)
-        return {"name": path.name, "sha256": digest.hexdigest()[:12]}
+        return {"name": path.name, "sha256": digest.hexdigest()[:12], "missing": False}
 
     @cached_property
     def index_versions(self) -> dict:
