@@ -201,6 +201,39 @@ def command_rerank_eval(args: argparse.Namespace) -> None:
         print(f"Report saved -> {destination}")
 
 
+def load_hybrid_reranker(args: argparse.Namespace) -> RerankingRetriever:
+    """Build the production retrieval chain: hybrid recall followed by reranking."""
+    return RerankingRetriever(
+        load_hybrid_retriever(args.index, args.lexical_index),
+        model_name=args.model,
+        candidate_k=args.candidate_k,
+        local_files_only=not args.allow_download,
+    )
+
+
+def command_hybrid_rerank_query(args: argparse.Namespace) -> None:
+    started = time.perf_counter()
+    results = load_hybrid_reranker(args).search(args.question, args.top_k)
+    print_results(results, (time.perf_counter() - started) * 1000)
+
+
+def command_hybrid_rerank_eval(args: argparse.Namespace) -> None:
+    retriever = load_hybrid_reranker(args)
+    cases = json.loads(Path(args.cases).read_text(encoding="utf-8"))
+    report = evaluate(retriever, cases, args.top_k)
+    print(f"hybrid + reranker recall@{args.top_k}={report['score']:.1%} ({report['hits']}/{report['total']})")
+    failures = [record for record in report["cases"] if not record["hit"]]
+    if failures:
+        print("Failures:")
+        for record in failures:
+            print(f"- {record['question']} -> expected one of {', '.join(record['expected_sources'])}")
+    if args.report:
+        destination = Path(args.report)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"Report saved -> {destination}")
+
+
 def command_answer(args: argparse.Namespace) -> None:
     evidence = load_hybrid_retriever(args.index, args.lexical_index).search(args.question, args.top_k)
     answer = DeepSeekGenerator.from_environment(model=args.model).answer(args.question, evidence)
@@ -381,6 +414,25 @@ def build_parser() -> argparse.ArgumentParser:
     rerank_evaluate.add_argument("--allow-download", action="store_true", help="Allow the first model download")
     rerank_evaluate.add_argument("--report", help="Optional JSON path for per-case evaluation results")
     rerank_evaluate.set_defaults(handler=command_rerank_eval)
+    hybrid_rerank_query = commands.add_parser("hybrid-rerank-query", help="Rerank hybrid-retrieval candidates on CPU")
+    hybrid_rerank_query.add_argument("--index", required=True, help="Path to an embedding index")
+    hybrid_rerank_query.add_argument("--lexical-index", default="data/index.json")
+    hybrid_rerank_query.add_argument("--question", required=True)
+    hybrid_rerank_query.add_argument("--top-k", type=int, default=3)
+    hybrid_rerank_query.add_argument("--candidate-k", type=int, default=10)
+    hybrid_rerank_query.add_argument("--model", default=DEFAULT_RERANKER)
+    hybrid_rerank_query.add_argument("--allow-download", action="store_true", help="Allow the first model download")
+    hybrid_rerank_query.set_defaults(handler=command_hybrid_rerank_query)
+    hybrid_rerank_evaluate = commands.add_parser("hybrid-rerank-eval", help="Evaluate hybrid retrieval followed by reranking")
+    hybrid_rerank_evaluate.add_argument("--index", required=True, help="Path to an embedding index")
+    hybrid_rerank_evaluate.add_argument("--lexical-index", default="data/index.json")
+    hybrid_rerank_evaluate.add_argument("--cases", required=True)
+    hybrid_rerank_evaluate.add_argument("--top-k", type=int, default=3)
+    hybrid_rerank_evaluate.add_argument("--candidate-k", type=int, default=10)
+    hybrid_rerank_evaluate.add_argument("--model", default=DEFAULT_RERANKER)
+    hybrid_rerank_evaluate.add_argument("--allow-download", action="store_true", help="Allow the first model download")
+    hybrid_rerank_evaluate.add_argument("--report", help="Optional JSON path for per-case evaluation results")
+    hybrid_rerank_evaluate.set_defaults(handler=command_hybrid_rerank_eval)
     answer = commands.add_parser("answer", help="Answer from embedding evidence through DeepSeek")
     answer.add_argument("--index", required=True, help="Path to an embedding index")
     answer.add_argument("--question", required=True)

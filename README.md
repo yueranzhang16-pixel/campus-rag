@@ -152,6 +152,20 @@ python -m campus_rag.cli judge-eval --index data/embedding_index.json --lexical-
 
 裁判分数不是事实真相：低置信度、低分或与人工反馈冲突的案例必须人工复核。每次修改裁判提示词都要保留版本号并重跑同一评测集，才能比较结果。
 
+## Reranker 重排序实验
+
+可选的生产检索链路为“混合召回 → Cross-Encoder 重排序”。混合检索先尽量找全候选片段；Reranker 再同时阅读“问题 + 候选片段”，调整候选的先后顺序。它通常能提升 `recall@1`，但会增加 CPU 延迟，因此必须和未重排版本在同一评测集上对照。
+
+本地已缓存模型时，下面两条命令都不会调用 DeepSeek，也不会产生 API 费用：
+
+```powershell
+$env:PYTHONPATH="src"
+python -m campus_rag.cli hybrid-eval --index data/embedding_index.json --lexical-index data/index.json --cases data/answer_eval_cases_day2.json --top-k 1 --report reports/hybrid_top1.json
+python -m campus_rag.cli hybrid-rerank-eval --index data/embedding_index.json --lexical-index data/index.json --cases data/answer_eval_cases_day2.json --top-k 1 --candidate-k 10 --report reports/hybrid_rerank_top1.json
+```
+
+再对比两个报告中的 `recall@1`、`total_latency_ms` 和每题 `latency_ms`。若正确率没有提升，或 CPU 延迟明显不可接受，就不要把 Reranker 接入在线问答链路。
+
 ## Parent-Child RAG
 
 索引仍以段落级“子块”进行检索，以保持术语命中的精度；命中后，系统会一并传给模型该子块所在章节中的相邻正文（父级上下文）。这避免了只检索到“差异：”等标题、却遗漏后续定义或列表的碎片化问题。
