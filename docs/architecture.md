@@ -18,7 +18,7 @@ Campus RAG 是一个面向数据结构课程笔记的中文问答系统。它不
            │
            └─ 证据充分性门槛
                  ├─ 分数足够，或英文专有术语在首条证据中直接出现
-                 │      └─ DeepSeek 生成带来源的回答
+                 │      └─ DeepSeek 生成带来源的回答 → 校验来源是否来自本次证据
                  └─ 证据不足
                         └─ 直接返回“资料不足，无法确认”（不调用 API）
 ```
@@ -36,7 +36,9 @@ Campus RAG 是一个面向数据结构课程笔记的中文问答系统。它不
 | 检索基线 | 10 道基础题 `recall@1` | 100% (10/10) |
 | 困难检索集 | 16 道改写、公式、边界和对比题 `recall@1` | 100% (16/16) |
 | 拒答门槛 | 4 道资料内 + 3 道库外问题 | 100% (7/7)，拒答 precision/recall 均为 100% |
-| 自动回归测试 | API、检索、生成、评测与重排序模块 | 43 passed |
+| 自动回归测试 | API、检索、生成、评测与重排序模块 | 49 passed |
+
+第 11～20 天继续补充了来源校验、检索诊断、稳态性能基准、`/ready` 与 GitHub Actions CI。当前自动回归测试为 **49 passed**；在本机以 16 道困难题、重复 2 次测得混合检索稳态中位延迟为 **148.135 ms**，P95 为 **161.930 ms**（不含 DeepSeek）。
 
 这些结果只针对当前 6 份课程笔记与小规模人工标注集，不代表通用 RAG 能力。下一次增加资料、修改切分策略、改提示词或换模型后，都应重跑同一套评测，比较回归而不是凭主观感受判断。
 
@@ -53,6 +55,12 @@ python -m campus_rag.cli abstention-eval --index data/embedding_index.json --lex
 
 # 自动回归测试（不调用 DeepSeek）
 python -m unittest discover -s tests -v
+
+# 第 13～15 天：检查一次查询的后端差异（不调用 DeepSeek）
+python -m campus_rag.cli diagnose-query --index data/embedding_index.json --lexical-index data/index.json --question "B 树和 B+ 树有什么区别？" --report reports/diagnosis.json
+
+# 第 19 天：测量预热后的检索延迟（不调用 DeepSeek）
+python -m campus_rag.cli benchmark --index data/embedding_index.json --lexical-index data/index.json --cases data/retrieval_eval_cases_day8.json --top-k 3 --repeats 2 --report reports/benchmark.json
 ```
 
 ## 6. 当前边界与下一步
@@ -60,3 +68,4 @@ python -m unittest discover -s tests -v
 - 评测集规模仍小：应持续把用户点踩、错误回答和课程新增内容转成测试样本。
 - 当前门槛由已知题与库外题校准；课程领域变化后需要重新校准，不应当作固定真理。
 - Reranker、Query Rewrite、引用粒度和多文档推理是后续实验方向；每次只改变一个变量，并记录准确率、延迟和 API 成本。
+- `citation_valid` 只验证来源标签是否来自本次检索，不能证明每一句话都被完整支持；高风险或重要结论仍应人工复核。

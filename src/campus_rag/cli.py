@@ -3,15 +3,18 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from statistics import median
 from pathlib import Path
 
 from .embeddings import DEFAULT_MODEL, EmbeddingIndex
 from .feedback_report import REASON_LABELS, build_feedback_report
 from .generation import DEFAULT_MODEL as DEFAULT_DEEPSEEK_MODEL, DeepSeekGenerator, assess_evidence, check_answer
 from .history import AnswerHistory, FeedbackHistory
+from .grounding_report import build_grounding_report
 from .hybrid import HybridRetriever
 from .judge import GroundedAnswerJudge
 from .reranking import DEFAULT_RERANKER, RerankingRetriever
+from .retrieval_diagnostics import build_retrieval_diagnostic
 from .retrieval import TfidfIndex, load_chunks, load_parent_child_corpus
 from .trace_report import build_trace_report
 
@@ -82,6 +85,26 @@ def command_hybrid_query(args: argparse.Namespace) -> None:
     print_results(results, (time.perf_counter() - started) * 1000)
 
 
+def command_diagnose_query(args: argparse.Namespace) -> None:
+    report = build_retrieval_diagnostic(
+        load_hybrid_retriever(args.index, args.lexical_index), args.question, args.top_k
+    )
+    print(f"Question: {report['question']}")
+    print(
+        "Dense/Lexical overlap: "
+        f"{report['overlap']['dense_lexical_shared_count']}/{report['overlap']['dense_lexical_union_count']}"
+    )
+    for backend in ("dense", "lexical", "hybrid"):
+        print(f"\n{backend}:")
+        for item in report[backend]:
+            print(f"- [{item['rank']}] {item['source']} | {item['context']} | score={item['score']}")
+    if args.report:
+        destination = Path(args.report)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"Report saved -> {destination}")
+
+
 def evaluate(index: TfidfIndex, cases: list[dict], top_k: int) -> dict:
     if not cases:
         raise ValueError("Evaluation cases must not be empty")
@@ -124,6 +147,34 @@ def evaluate(index: TfidfIndex, cases: list[dict], top_k: int) -> dict:
         "total_latency_ms": round((time.perf_counter() - started) * 1000, 3),
         "category_metrics": category_metrics,
         "cases": records,
+    }
+
+
+def benchmark_retrieval(index: TfidfIndex, cases: list[dict], top_k: int, repeats: int) -> dict:
+    if not cases:
+        raise ValueError("Benchmark cases must not be empty")
+    if repeats <= 0:
+        raise ValueError("repeats must be positive")
+    # Load models and allocate first-use state before measuring steady-state latency.
+    index.search(cases[0]["question"], top_k)
+    latencies = []
+    for _ in range(repeats):
+        for case in cases:
+            started = time.perf_counter()
+            index.search(case["question"], top_k)
+            latencies.append((time.perf_counter() - started) * 1000)
+    ordered = sorted(latencies)
+    p95_index = max(0, round((len(ordered) - 1) * 0.95))
+    return {
+        "metric": "steady_state_retrieval_latency_ms",
+        "queries": len(latencies),
+        "top_k": top_k,
+        "repeats": repeats,
+        "latency_ms": {
+            "median": round(median(latencies), 3),
+            "p95": round(ordered[p95_index], 3),
+            "max": round(max(latencies), 3),
+        },
     }
 
 
@@ -188,6 +239,22 @@ def command_hybrid_eval(args: argparse.Namespace) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"Report saved -> {destination}")
+
+
+def command_benchmark(args: argparse.Namespace) -> None:
+    cases = json.loads(Path(args.cases).read_text(encoding="utf-8"))
+    report = benchmark_retrieval(
+        load_hybrid_retriever(args.index, args.lexical_index), cases, args.top_k, args.repeats
+    )
+    latency = report["latency_ms"]
+    print(
+        f"steady-state latency: median={latency['median']} ms "
+        f"p95={latency['p95']} ms max={latency['max']} ms ({report['queries']} queries)"
+    )
+    destination = Path(args.report)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"Report saved -> {destination}")
 
 
 def command_rerank_query(args: argparse.Namespace) -> None:
@@ -378,6 +445,21 @@ def command_trace_report(args: argparse.Namespace) -> None:
         print(f"报告已保存：{destination}")
 
 
+def command_grounding_report(args: argparse.Namespace) -> None:
+    report = build_grounding_report(AnswerHistory(Path(args.history)).all(), args.limit)
+    print(f"Grounding traces: {report['evaluated_traces']}/{report['total_traces']}")
+    print(f"Refused: {report['refused_count']} | citation valid rate: {report['citation_valid_rate']:.1%}")
+    if report["invalid_citation_examples"]:
+        print("Invalid citation examples:")
+        for item in report["invalid_citation_examples"]:
+            print(f"- {item['trace_id']} | {item['question']} | unsupported={item['unsupported_sources']}")
+    if args.report:
+        destination = Path(args.report)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"Report saved -> {destination}")
+
+
 def command_judge_eval(args: argparse.Namespace) -> None:
     cases = json.loads(Path(args.cases).read_text(encoding="utf-8"))
     if not cases:
@@ -455,6 +537,13 @@ def build_parser() -> argparse.ArgumentParser:
     hybrid_query.add_argument("--question", required=True)
     hybrid_query.add_argument("--top-k", type=int, default=3)
     hybrid_query.set_defaults(handler=command_hybrid_query)
+    diagnose = commands.add_parser("diagnose-query", help="Compare dense, lexical, and hybrid retrieval for one question")
+    diagnose.add_argument("--index", required=True, help="Path to an embedding index")
+    diagnose.add_argument("--lexical-index", default="data/index.json")
+    diagnose.add_argument("--question", required=True)
+    diagnose.add_argument("--top-k", type=int, default=3)
+    diagnose.add_argument("--report", help="Optional JSON path for the diagnostic")
+    diagnose.set_defaults(handler=command_diagnose_query)
     evaluate = commands.add_parser("eval")
     evaluate.add_argument("--index", required=True)
     evaluate.add_argument("--cases", required=True)
@@ -474,6 +563,14 @@ def build_parser() -> argparse.ArgumentParser:
     hybrid_evaluate.add_argument("--top-k", type=int, default=3)
     hybrid_evaluate.add_argument("--report", help="Optional JSON path for per-case evaluation results")
     hybrid_evaluate.set_defaults(handler=command_hybrid_eval)
+    benchmark = commands.add_parser("benchmark", help="Measure warm retrieval latency without calling an LLM")
+    benchmark.add_argument("--index", required=True, help="Path to an embedding index")
+    benchmark.add_argument("--lexical-index", default="data/index.json")
+    benchmark.add_argument("--cases", required=True)
+    benchmark.add_argument("--report", required=True)
+    benchmark.add_argument("--top-k", type=int, default=3)
+    benchmark.add_argument("--repeats", type=int, default=3)
+    benchmark.set_defaults(handler=command_benchmark)
     rerank_query = commands.add_parser("rerank-query", help="Rerank dense-retrieval candidates on CPU")
     rerank_query.add_argument("--index", required=True, help="Path to an embedding index")
     rerank_query.add_argument("--question", required=True)
@@ -540,6 +637,11 @@ def build_parser() -> argparse.ArgumentParser:
     trace_report.add_argument("--limit", type=int, default=10)
     trace_report.add_argument("--report", help="Optional JSON path for the trace report")
     trace_report.set_defaults(handler=command_trace_report)
+    grounding_report = commands.add_parser("grounding-report", help="Summarize citation validation from local answer traces")
+    grounding_report.add_argument("--history", default="logs/answer_history.jsonl")
+    grounding_report.add_argument("--limit", type=int, default=20)
+    grounding_report.add_argument("--report", help="Optional JSON path for the grounding report")
+    grounding_report.set_defaults(handler=command_grounding_report)
     judge_eval = commands.add_parser("judge-eval", help="Score generated RAG answers against retrieved evidence using an LLM judge")
     judge_eval.add_argument("--index", required=True, help="Path to an embedding index")
     judge_eval.add_argument("--lexical-index", default="data/index.json")

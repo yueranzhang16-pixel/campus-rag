@@ -15,6 +15,7 @@ PROMPT_VERSION = "grounded-v1"
 MIN_EVIDENCE_SCORE = 0.06
 INSUFFICIENT_EVIDENCE_RESPONSE = "资料不足，无法确认。"
 LATIN_ANCHOR_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_+.-]{1,}")
+CITATION_SOURCE_PATTERN = re.compile(r"\[(?:来源：)?\s*([^\]|/#]+?\.(?:md|txt))(?:[^\]]*)\]")
 
 
 @dataclass
@@ -56,6 +57,21 @@ def assess_evidence(
     if any(anchor in first_evidence for anchor in anchors):
         return EvidenceAssessment(True, top_score, threshold, "exact_english_anchor")
     return EvidenceAssessment(False, top_score, threshold, "top_score_below_threshold")
+
+
+def validate_citations(answer: str, evidence: list[SearchResult], evidence_sufficient: bool) -> dict:
+    """Check whether source labels in an answer point to retrieved evidence."""
+    cited_sources = list(dict.fromkeys(match.group(1).strip() for match in CITATION_SOURCE_PATTERN.finditer(answer)))
+    evidence_sources = {item.source for item in evidence}
+    unsupported_sources = [source for source in cited_sources if source not in evidence_sources]
+    citation_required = evidence_sufficient
+    citation_valid = not citation_required or (bool(cited_sources) and not unsupported_sources)
+    return {
+        "citation_required": citation_required,
+        "citation_valid": citation_valid,
+        "cited_sources": cited_sources,
+        "unsupported_sources": unsupported_sources,
+    }
 
 
 def build_messages(question: str, evidence: list[SearchResult]) -> list[dict[str, str]]:

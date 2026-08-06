@@ -19,6 +19,7 @@ from .generation import (
     INSUFFICIENT_EVIDENCE_RESPONSE,
     DeepSeekGenerator,
     assess_evidence,
+    validate_citations,
 )
 from .history import AnswerHistory, FeedbackHistory
 from .hybrid import HybridRetriever
@@ -57,10 +58,19 @@ class RetrievalResponse(BaseModel):
     evidence: list[Evidence] = Field(description="按相关性排序的证据列表")
 
 
+class ReadyResponse(BaseModel):
+    status: Literal["ok", "degraded"]
+    embedding_index_exists: bool
+    lexical_index_exists: bool
+    api_key_configured: bool
+    model: str
+
+
 class AnswerResponse(RetrievalResponse):
     answer: str = Field(description="DeepSeek 基于证据生成的回答，包含来源标注")
     answer_id: str | None = Field(description="本地问答记录编号，用于提交反馈")
     trace_id: str | None = Field(description="本次问答的本地追踪编号；当前与 answer_id 相同")
+    grounding: dict = Field(description="证据门槛和来源标注的可观测结果")
 
 
 class HistoryResponse(BaseModel):
@@ -113,6 +123,17 @@ class CampusRagService:
     def retrieve(self, question: str, top_k: int) -> list[SearchResult]:
         return self.retriever.search(question, top_k)
 
+    def readiness(self) -> dict:
+        embedding_exists = self.embedding_index.is_file()
+        lexical_exists = self.lexical_index.is_file()
+        return {
+            "status": "ok" if embedding_exists and lexical_exists else "degraded",
+            "embedding_index_exists": embedding_exists,
+            "lexical_index_exists": lexical_exists,
+            "api_key_configured": bool(os.environ.get("DEEPSEEK_API_KEY")),
+            "model": self.model,
+        }
+
     @staticmethod
     def _index_signature(path: Path) -> dict:
         digest = sha256()
@@ -128,7 +149,7 @@ class CampusRagService:
             "lexical": self._index_signature(self.lexical_index),
         }
 
-    def answer(self, question: str, top_k: int) -> tuple[str, list[SearchResult], str | None]:
+    def answer(self, question: str, top_k: int) -> tuple[str, list[SearchResult], str | None, dict]:
         started = time.perf_counter()
         evidence = self.retrieve(question, top_k)
         usage = {}
@@ -142,6 +163,8 @@ class CampusRagService:
                 answer, usage = generated.content, generated.usage
             else:
                 answer = generator.answer(question, evidence)
+        citation = validate_citations(answer, evidence, assessment.sufficient)
+        grounding = {**assessment.to_dict(), **citation}
         answer_id = None
         if self.history:
             try:
@@ -156,13 +179,14 @@ class CampusRagService:
                         "model": self.model,
                         "prompt_version": PROMPT_VERSION,
                         "evidence_gate": assessment.to_dict(),
+                        "citation": citation,
                         "index_versions": self.index_versions,
                         "usage": usage,
                     },
                 )
             except OSError:
                 pass
-        return answer, evidence, answer_id
+        return answer, evidence, answer_id, grounding
 
 
 def evidence_response(evidence: list[SearchResult]) -> list[Evidence]:
@@ -193,6 +217,10 @@ def create_app(service: CampusRagService | None = None) -> FastAPI:
     @app.get("/health", summary="检查服务状态", description="确认 API 服务已成功启动；不会加载模型，也不会调用 DeepSeek。")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/ready", response_model=ReadyResponse, summary="检查索引与模型调用配置")
+    def ready() -> ReadyResponse:
+        return ReadyResponse(**service.readiness())
 
     @app.get("/history", response_model=HistoryResponse, summary="查看最近问答记录")
     def history(limit: int = Query(default=20, ge=1, le=50, description="返回最近几条本地记录")) -> HistoryResponse:
@@ -235,12 +263,18 @@ def create_app(service: CampusRagService | None = None) -> FastAPI:
     )
     def answer(request: QuestionRequest) -> AnswerResponse:
         try:
-            text, evidence, answer_id = service.answer(request.question, request.top_k)
+            text, evidence, answer_id, grounding = service.answer(request.question, request.top_k)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except RuntimeError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
-        return AnswerResponse(answer=text, answer_id=answer_id, trace_id=answer_id, evidence=evidence_response(evidence))
+        return AnswerResponse(
+            answer=text,
+            answer_id=answer_id,
+            trace_id=answer_id,
+            evidence=evidence_response(evidence),
+            grounding=grounding,
+        )
 
     return app
 

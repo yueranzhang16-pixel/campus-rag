@@ -1,6 +1,7 @@
 __pycache__/
 *.py[cod]
 .env
+config.local.ps1
 data/index.json
 data/embedding_index.json
 reports/

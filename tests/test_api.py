@@ -51,6 +51,14 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"status": "ok"})
 
+    def test_ready_reports_indexes_and_does_not_expose_the_api_key(self):
+        response = self.client.get("/ready")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(response.json()["status"], {"ok", "degraded"})
+        self.assertIn("embedding_index_exists", response.json())
+        self.assertIn("api_key_configured", response.json())
+        self.assertNotIn("api_key", response.json())
+
     def test_root_returns_chat_page(self):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
@@ -69,6 +77,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.json()["evidence"][0]["source"], "线性表.md")
         self.assertTrue(response.json()["answer_id"])
         self.assertEqual(response.json()["trace_id"], response.json()["answer_id"])
+        self.assertTrue(response.json()["grounding"]["citation_valid"])
 
     def test_history_keeps_answer_metadata_locally(self):
         self.client.post("/answer", json={"question": "什么是顺序表？"})
@@ -80,6 +89,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(record["retrieval"][0]["score"], 0.9)
         self.assertEqual(record["trace"]["retriever"], "hybrid_rrf")
         self.assertIn("embedding", record["trace"]["index_versions"])
+        self.assertIn("citation", record["trace"])
 
     def test_feedback_is_linked_to_answer_id(self):
         answer = self.client.post("/answer", json={"question": "什么是顺序表？"}).json()

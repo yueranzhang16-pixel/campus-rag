@@ -65,7 +65,7 @@ python -m uvicorn campus_rag.api:app --host 127.0.0.1 --port 8010 --reload
 | --- | --- | --- |
 | 混合检索 | `hybrid-eval` | `recall@3 = 100% (10/10)` |
 | 答案回归 | `answer-eval`（3 道已修复失败题） | `100% (3/3)` |
-| 自动测试 | `python -m unittest discover -s tests -v` | `22 passed` |
+| 自动测试 | `python -m unittest discover -s tests -v` | `49 passed` |
 
 运行检索评测：
 
@@ -180,6 +180,36 @@ python -m campus_rag.cli hybrid-eval --index data/embedding_index.json --lexical
 python -m campus_rag.cli abstention-eval --index data/embedding_index.json --lexical-index data/index.json --cases data/abstention_eval_cases_day9.json --top-k 3 --report reports/day9_abstention.json
 python -m unittest discover -s tests -v
 ```
+
+## 运行配置与自动化测试
+
+可复制 [config.example.ps1](config.example.ps1) 为 `config.local.ps1`，填入自己的 DeepSeek Key 后用 `. .\config.local.ps1` 加载；`config.local.ps1` 含密钥，不能提交到 GitHub。
+
+- `GET /health`：只确认 FastAPI 进程还活着。
+- `GET /ready`：确认两份本地索引是否存在、是否配置了 API Key（只返回布尔值，不会泄露 Key）。
+- GitHub Actions 会在推送 `main` 或创建 Pull Request 时执行全部自动化测试；不调用 DeepSeek，也不下载课程索引。
+
+## 第 11～20 天：工程化闭环
+
+- **来源校验**：`/answer` 会返回 `grounding` 字段，标识证据门槛、来源是否存在于本次检索结果、以及不受支持的来源名；同样写入本地 Trace。
+- **故障诊断**：`diagnose-query` 并列展示 Dense、TF-IDF 与 Hybrid 的命中和重叠，方便定位“没召回”还是“融合排序”问题。
+- **性能基准**：对预热后的本地检索测量稳态延迟；当前机器在 16 道困难题、重复 2 次的条件下，median `148.135 ms`、P95 `161.930 ms`，不含 DeepSeek 调用。
+- **自动化质量门禁**：49 项回归测试；GitHub Actions 会在每次推送时执行它们。
+
+```powershell
+$env:PYTHONPATH="src"
+
+# 分析一次问题的三个检索后端（不调用 DeepSeek）
+python -m campus_rag.cli diagnose-query --index data/embedding_index.json --lexical-index data/index.json --question "B 树和 B+ 树有什么区别？" --report reports/diagnosis.json
+
+# 查看真实问答的来源标注质量（不调用 DeepSeek）
+python -m campus_rag.cli grounding-report --history logs/answer_history.jsonl --report reports/grounding.json
+
+# 测量预热后的检索延迟（不调用 DeepSeek）
+python -m campus_rag.cli benchmark --index data/embedding_index.json --lexical-index data/index.json --cases data/retrieval_eval_cases_day8.json --top-k 3 --repeats 2 --report reports/benchmark.json
+```
+
+完整版本记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## Parent-Child RAG
 

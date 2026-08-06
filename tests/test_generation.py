@@ -6,6 +6,7 @@ from campus_rag.generation import (
     assess_evidence,
     build_messages,
     check_answer,
+    validate_citations,
 )
 from campus_rag.retrieval import SearchResult
 
@@ -70,3 +71,16 @@ class GenerationTests(unittest.TestCase):
         )
         self.assertTrue(assessment.sufficient)
         self.assertEqual(assessment.reason, "exact_english_anchor")
+
+    def test_citation_validation_rejects_sources_outside_retrieved_evidence(self):
+        validation = validate_citations(
+            "顺序表使用连续地址存储。[线性表.md] [不存在.md]",
+            [SearchResult("线性表.md", "连续地址", 0.9)],
+            evidence_sufficient=True,
+        )
+        self.assertFalse(validation["citation_valid"])
+        self.assertEqual(validation["unsupported_sources"], ["不存在.md"])
+
+    def test_citation_validation_allows_refusal_without_a_citation(self):
+        validation = validate_citations("资料不足，无法确认。", [], evidence_sufficient=False)
+        self.assertTrue(validation["citation_valid"])
