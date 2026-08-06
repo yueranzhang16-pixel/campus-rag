@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .embeddings import DEFAULT_MODEL, EmbeddingIndex
 from .feedback_report import REASON_LABELS, build_feedback_report
-from .generation import DEFAULT_MODEL as DEFAULT_DEEPSEEK_MODEL, DeepSeekGenerator, check_answer
+from .generation import DEFAULT_MODEL as DEFAULT_DEEPSEEK_MODEL, DeepSeekGenerator, assess_evidence, check_answer
 from .history import AnswerHistory, FeedbackHistory
 from .hybrid import HybridRetriever
 from .judge import GroundedAnswerJudge
@@ -98,6 +98,8 @@ def evaluate(index: TfidfIndex, cases: list[dict], top_k: int) -> dict:
             hits += 1
         records.append(
             {
+                "id": case.get("id"),
+                "category": case.get("category", "uncategorized"),
                 "question": case["question"],
                 "expected_sources": expected_sources,
                 "retrieved_sources": sources,
@@ -106,14 +108,32 @@ def evaluate(index: TfidfIndex, cases: list[dict], top_k: int) -> dict:
             }
         )
     total = len(cases)
+    category_metrics: dict[str, dict[str, int | float]] = {}
+    for record in records:
+        category = record["category"]
+        summary = category_metrics.setdefault(category, {"hits": 0, "total": 0})
+        summary["total"] += 1
+        summary["hits"] += int(record["hit"])
+    for summary in category_metrics.values():
+        summary["score"] = round(summary["hits"] / summary["total"], 4)
     return {
         "metric": f"recall@{top_k}",
         "score": hits / total,
         "hits": hits,
         "total": total,
         "total_latency_ms": round((time.perf_counter() - started) * 1000, 3),
+        "category_metrics": category_metrics,
         "cases": records,
     }
+
+
+def print_category_metrics(report: dict) -> None:
+    metrics = report.get("category_metrics", {})
+    if len(metrics) <= 1 and "uncategorized" in metrics:
+        return
+    print("By category:")
+    for category, summary in sorted(metrics.items()):
+        print(f"- {category}: {summary['score']:.1%} ({summary['hits']}/{summary['total']})")
 
 
 def command_eval(args: argparse.Namespace) -> None:
@@ -121,6 +141,7 @@ def command_eval(args: argparse.Namespace) -> None:
     cases = json.loads(Path(args.cases).read_text(encoding="utf-8"))
     report = evaluate(index, cases, args.top_k)
     print(f"recall@{args.top_k}={report['score']:.1%} ({report['hits']}/{report['total']})")
+    print_category_metrics(report)
     failures = [record for record in report["cases"] if not record["hit"]]
     if failures:
         print("Failures:")
@@ -138,6 +159,7 @@ def command_embedding_eval(args: argparse.Namespace) -> None:
     cases = json.loads(Path(args.cases).read_text(encoding="utf-8"))
     report = evaluate(index, cases, args.top_k)
     print(f"embedding recall@{args.top_k}={report['score']:.1%} ({report['hits']}/{report['total']})")
+    print_category_metrics(report)
     failures = [record for record in report["cases"] if not record["hit"]]
     if failures:
         print("Failures:")
@@ -155,6 +177,7 @@ def command_hybrid_eval(args: argparse.Namespace) -> None:
     cases = json.loads(Path(args.cases).read_text(encoding="utf-8"))
     report = evaluate(index, cases, args.top_k)
     print(f"hybrid recall@{args.top_k}={report['score']:.1%} ({report['hits']}/{report['total']})")
+    print_category_metrics(report)
     failures = [record for record in report["cases"] if not record["hit"]]
     if failures:
         print("Failures:")
@@ -189,6 +212,7 @@ def command_rerank_eval(args: argparse.Namespace) -> None:
     cases = json.loads(Path(args.cases).read_text(encoding="utf-8"))
     report = evaluate(retriever, cases, args.top_k)
     print(f"reranked recall@{args.top_k}={report['score']:.1%} ({report['hits']}/{report['total']})")
+    print_category_metrics(report)
     failures = [record for record in report["cases"] if not record["hit"]]
     if failures:
         print("Failures:")
@@ -222,6 +246,7 @@ def command_hybrid_rerank_eval(args: argparse.Namespace) -> None:
     cases = json.loads(Path(args.cases).read_text(encoding="utf-8"))
     report = evaluate(retriever, cases, args.top_k)
     print(f"hybrid + reranker recall@{args.top_k}={report['score']:.1%} ({report['hits']}/{report['total']})")
+    print_category_metrics(report)
     failures = [record for record in report["cases"] if not record["hit"]]
     if failures:
         print("Failures:")
@@ -232,6 +257,58 @@ def command_hybrid_rerank_eval(args: argparse.Namespace) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"Report saved -> {destination}")
+
+
+def evaluate_abstention(index: TfidfIndex, cases: list[dict], top_k: int) -> dict:
+    if not cases:
+        raise ValueError("Abstention evaluation cases must not be empty")
+    records = []
+    for case in cases:
+        evidence = index.search(case["question"], top_k)
+        assessment = assess_evidence(evidence, case["question"])
+        expected_refusal = bool(case["expect_refusal"])
+        predicted_refusal = not assessment.sufficient
+        records.append(
+            {
+                "id": case.get("id"),
+                "question": case["question"],
+                "expected_refusal": expected_refusal,
+                "predicted_refusal": predicted_refusal,
+                "correct": expected_refusal == predicted_refusal,
+                "assessment": assessment.to_dict(),
+                "retrieved_sources": [item.source for item in evidence],
+            }
+        )
+    true_positive = sum(item["expected_refusal"] and item["predicted_refusal"] for item in records)
+    false_positive = sum(not item["expected_refusal"] and item["predicted_refusal"] for item in records)
+    false_negative = sum(item["expected_refusal"] and not item["predicted_refusal"] for item in records)
+    total = len(records)
+    return {
+        "metric": "abstention_accuracy",
+        "score": sum(item["correct"] for item in records) / total,
+        "correct": sum(item["correct"] for item in records),
+        "total": total,
+        "refusal_precision": true_positive / (true_positive + false_positive) if true_positive + false_positive else 0.0,
+        "refusal_recall": true_positive / (true_positive + false_negative) if true_positive + false_negative else 0.0,
+        "cases": records,
+    }
+
+
+def command_abstention_eval(args: argparse.Namespace) -> None:
+    retriever = load_hybrid_retriever(args.index, args.lexical_index)
+    cases = json.loads(Path(args.cases).read_text(encoding="utf-8"))
+    report = evaluate_abstention(retriever, cases, args.top_k)
+    print(f"abstention accuracy={report['score']:.1%} ({report['correct']}/{report['total']})")
+    print(f"refusal precision={report['refusal_precision']:.1%} recall={report['refusal_recall']:.1%}")
+    failures = [record for record in report["cases"] if not record["correct"]]
+    if failures:
+        print("Failures:")
+        for record in failures:
+            print(f"- {record['question']} -> predicted_refusal={record['predicted_refusal']}")
+    destination = Path(args.report)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"Report saved -> {destination}")
 
 
 def command_answer(args: argparse.Namespace) -> None:
@@ -433,6 +510,13 @@ def build_parser() -> argparse.ArgumentParser:
     hybrid_rerank_evaluate.add_argument("--allow-download", action="store_true", help="Allow the first model download")
     hybrid_rerank_evaluate.add_argument("--report", help="Optional JSON path for per-case evaluation results")
     hybrid_rerank_evaluate.set_defaults(handler=command_hybrid_rerank_eval)
+    abstention_evaluate = commands.add_parser("abstention-eval", help="Evaluate evidence-gated refusal without calling an LLM")
+    abstention_evaluate.add_argument("--index", required=True, help="Path to an embedding index")
+    abstention_evaluate.add_argument("--lexical-index", default="data/index.json")
+    abstention_evaluate.add_argument("--cases", required=True)
+    abstention_evaluate.add_argument("--report", required=True)
+    abstention_evaluate.add_argument("--top-k", type=int, default=3)
+    abstention_evaluate.set_defaults(handler=command_abstention_eval)
     answer = commands.add_parser("answer", help="Answer from embedding evidence through DeepSeek")
     answer.add_argument("--index", required=True, help="Path to an embedding index")
     answer.add_argument("--question", required=True)

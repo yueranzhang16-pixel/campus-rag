@@ -166,6 +166,21 @@ python -m campus_rag.cli hybrid-rerank-eval --index data/embedding_index.json --
 
 再对比两个报告中的 `recall@1`、`total_latency_ms` 和每题 `latency_ms`。若正确率没有提升，或 CPU 延迟明显不可接受，就不要把 Reranker 接入在线问答链路。
 
+## 第 8～10 天工程交付
+
+- 新增 16 道困难检索题，覆盖改写问法、公式、边界条件、定义、细节与概念对比；评测报告会按题型分别统计。
+- 增加证据充分性门槛：首条证据得分不足时直接回复“资料不足，无法确认”，不调用 DeepSeek；英文专有术语在首条证据中直接出现时可作为窄范围例外。
+- 增加 `abstention-eval`，同时报告拒答准确率、precision 和 recall。
+
+第 8、9 天的真实结果及完整架构说明见 [docs/architecture.md](docs/architecture.md)。
+
+```powershell
+$env:PYTHONPATH="src"
+python -m campus_rag.cli hybrid-eval --index data/embedding_index.json --lexical-index data/index.json --cases data/retrieval_eval_cases_day8.json --top-k 1 --report reports/day8_hard_retrieval_top1.json
+python -m campus_rag.cli abstention-eval --index data/embedding_index.json --lexical-index data/index.json --cases data/abstention_eval_cases_day9.json --top-k 3 --report reports/day9_abstention.json
+python -m unittest discover -s tests -v
+```
+
 ## Parent-Child RAG
 
 索引仍以段落级“子块”进行检索，以保持术语命中的精度；命中后，系统会一并传给模型该子块所在章节中的相邻正文（父级上下文）。这避免了只检索到“差异：”等标题、却遗漏后续定义或列表的碎片化问题。

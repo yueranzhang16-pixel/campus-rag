@@ -12,12 +12,50 @@ from .retrieval import SearchResult
 DEFAULT_MODEL = "deepseek-v4-flash"
 DEFAULT_BASE_URL = "https://api.deepseek.com"
 PROMPT_VERSION = "grounded-v1"
+MIN_EVIDENCE_SCORE = 0.06
+INSUFFICIENT_EVIDENCE_RESPONSE = "资料不足，无法确认。"
+LATIN_ANCHOR_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_+.-]{1,}")
 
 
 @dataclass
 class GeneratedAnswer:
     content: str
     usage: dict[str, int]
+
+
+@dataclass(frozen=True)
+class EvidenceAssessment:
+    sufficient: bool
+    top_score: float
+    threshold: float
+    reason: str
+
+    def to_dict(self) -> dict[str, str | float | bool]:
+        return {
+            "sufficient": self.sufficient,
+            "top_score": self.top_score,
+            "threshold": self.threshold,
+            "reason": self.reason,
+        }
+
+
+def assess_evidence(
+    evidence: list[SearchResult], question: str = "", threshold: float = MIN_EVIDENCE_SCORE
+) -> EvidenceAssessment:
+    """Reject low-confidence retrieval before an LLM can invent an answer."""
+    if not evidence:
+        return EvidenceAssessment(False, 0.0, threshold, "no_evidence")
+    # Retrieval results are ordered by relevance. A lower-ranked fragment may
+    # carry a larger backend score on a different scale, so do not let it
+    # override the retriever's first-ranked evidence.
+    top_score = evidence[0].score
+    if top_score >= threshold:
+        return EvidenceAssessment(True, top_score, threshold, "score_above_threshold")
+    first_evidence = "\n".join((evidence[0].text, evidence[0].context, evidence[0].parent_text)).lower()
+    anchors = {token.lower() for token in LATIN_ANCHOR_PATTERN.findall(question)}
+    if any(anchor in first_evidence for anchor in anchors):
+        return EvidenceAssessment(True, top_score, threshold, "exact_english_anchor")
+    return EvidenceAssessment(False, top_score, threshold, "top_score_below_threshold")
 
 
 def build_messages(question: str, evidence: list[SearchResult]) -> list[dict[str, str]]:
@@ -74,6 +112,8 @@ class DeepSeekGenerator:
         return self.answer_with_usage(question, evidence).content
 
     def answer_with_usage(self, question: str, evidence: list[SearchResult]) -> GeneratedAnswer:
+        if not assess_evidence(evidence, question).sufficient:
+            return GeneratedAnswer(content=INSUFFICIENT_EVIDENCE_RESPONSE, usage={})
         return self.complete(build_messages(question, evidence), temperature=0.2)
 
     def complete(self, messages: list[dict[str, str]], temperature: float = 0.0) -> GeneratedAnswer:

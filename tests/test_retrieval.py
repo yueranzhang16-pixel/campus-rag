@@ -1,7 +1,7 @@
 import unittest
 from campus_rag import cli
 
-from campus_rag.retrieval import Chunk, TfidfIndex, split_markdown_chunks, split_markdown_document, tokenize
+from campus_rag.retrieval import Chunk, SearchResult, TfidfIndex, split_markdown_chunks, split_markdown_document, tokenize
 
 
 class RetrievalTests(unittest.TestCase):
@@ -80,6 +80,35 @@ class RetrievalTests(unittest.TestCase):
             top_k=1,
         )
         self.assertEqual(report["score"], 1.0)
+
+    def test_eval_reports_metrics_by_category(self):
+        report = cli.evaluate(
+            self.index,
+            [
+                {"question": "图书借阅期限", "expected_source": "library.md", "category": "definition"},
+                {"question": "课程项目成绩", "expected_source": "course.md", "category": "definition"},
+            ],
+            top_k=1,
+        )
+        self.assertEqual(report["category_metrics"]["definition"], {"hits": 2, "total": 2, "score": 1.0})
+
+    def test_abstention_eval_reports_precision_and_recall(self):
+        class StubRetriever:
+            def search(self, question, top_k):
+                score = 0.02 if question == "unknown" else 0.08
+                return [SearchResult("source.md", "passage", score)][:top_k]
+
+        report = cli.evaluate_abstention(
+            StubRetriever(),
+            [
+                {"question": "known", "expect_refusal": False},
+                {"question": "unknown", "expect_refusal": True},
+            ],
+            top_k=1,
+        )
+        self.assertEqual(report["score"], 1.0)
+        self.assertEqual(report["refusal_precision"], 1.0)
+        self.assertEqual(report["refusal_recall"], 1.0)
 
 
 if __name__ == "__main__":

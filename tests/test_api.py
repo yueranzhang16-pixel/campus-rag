@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from campus_rag.api import CampusRagService, create_app
+from campus_rag.generation import INSUFFICIENT_EVIDENCE_RESPONSE
 from campus_rag.retrieval import SearchResult
 
 
@@ -17,6 +18,11 @@ class FakeGenerator:
         return "顺序表使用连续地址存储。[线性表.md]"
 
 
+class LowConfidenceRetriever:
+    def search(self, question, top_k):
+        return [SearchResult("线性表.md", "无关片段", 0.02, "线性表")][:top_k]
+
+
 class FakeService(CampusRagService):
     @property
     def retriever(self):
@@ -25,6 +31,12 @@ class FakeService(CampusRagService):
     @property
     def generator(self):
         return FakeGenerator()
+
+
+class LowConfidenceService(FakeService):
+    @property
+    def retriever(self):
+        return LowConfidenceRetriever()
 
 
 class ApiTests(unittest.TestCase):
@@ -96,6 +108,12 @@ class ApiTests(unittest.TestCase):
     def test_rejects_empty_question(self):
         response = self.client.post("/retrieve", json={"question": ""})
         self.assertEqual(response.status_code, 422)
+
+    def test_answer_refuses_when_evidence_score_is_too_low(self):
+        service = LowConfidenceService(history_path=None, feedback_path=None)
+        response = TestClient(create_app(service)).post("/answer", json={"question": "光合作用是什么？"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["answer"], INSUFFICIENT_EVIDENCE_RESPONSE)
 
 
 if __name__ == "__main__":

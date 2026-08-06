@@ -1,0 +1,37 @@
+[
+  {
+    "id": "supported-circular-queue",
+    "question": "顺序循环队列中元素个数 N 应如何由 front、rear 和 maxsize 计算？",
+    "expect_refusal": false
+  },
+  {
+    "id": "supported-bplus-tree",
+    "question": "B 树与 B+ 树在叶子结点保存数据上有什么区别？",
+    "expect_refusal": false
+  },
+  {
+    "id": "supported-full-tree",
+    "question": "树高为 h 的满二叉树一共有多少个结点？",
+    "expect_refusal": false
+  },
+  {
+    "id": "supported-string-block",
+    "question": "块链结构的最后一个结点没有填满时，用什么字符补齐？",
+    "expect_refusal": false
+  },
+  {
+    "id": "unsupported-photosynthesis",
+    "question": "光合作用的化学反应公式是什么？",
+    "expect_refusal": true
+  },
+  {
+    "id": "unsupported-python-gil",
+    "question": "Python 的 GIL 是什么？",
+    "expect_refusal": true
+  },
+  {
+    "id": "supported-dijkstra",
+    "question": "Dijkstra 算法如何求最短路径？",
+    "expect_refusal": false
+  }
+]

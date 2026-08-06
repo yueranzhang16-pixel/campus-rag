@@ -13,7 +13,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .cli import load_embedding_index, load_index
-from .generation import DEFAULT_MODEL, PROMPT_VERSION, DeepSeekGenerator
+from .generation import (
+    DEFAULT_MODEL,
+    PROMPT_VERSION,
+    INSUFFICIENT_EVIDENCE_RESPONSE,
+    DeepSeekGenerator,
+    assess_evidence,
+)
 from .history import AnswerHistory, FeedbackHistory
 from .hybrid import HybridRetriever
 from .retrieval import SearchResult
@@ -126,12 +132,16 @@ class CampusRagService:
         started = time.perf_counter()
         evidence = self.retrieve(question, top_k)
         usage = {}
-        generator = self.generator
-        if isinstance(generator, DeepSeekGenerator):
-            generated = generator.answer_with_usage(question, evidence)
-            answer, usage = generated.content, generated.usage
+        assessment = assess_evidence(evidence, question)
+        if not assessment.sufficient:
+            answer = INSUFFICIENT_EVIDENCE_RESPONSE
         else:
-            answer = generator.answer(question, evidence)
+            generator = self.generator
+            if isinstance(generator, DeepSeekGenerator):
+                generated = generator.answer_with_usage(question, evidence)
+                answer, usage = generated.content, generated.usage
+            else:
+                answer = generator.answer(question, evidence)
         answer_id = None
         if self.history:
             try:
@@ -145,6 +155,7 @@ class CampusRagService:
                         "top_k": top_k,
                         "model": self.model,
                         "prompt_version": PROMPT_VERSION,
+                        "evidence_gate": assessment.to_dict(),
                         "index_versions": self.index_versions,
                         "usage": usage,
                     },
