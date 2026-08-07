@@ -123,17 +123,29 @@ def load_chunks(docs_dir: Path) -> list[Chunk]:
 
 
 class TfidfIndex:
-    def __init__(self, chunks: list[Chunk], document_frequency: Counter[str], parents: dict[str, ParentChunk] | None = None):
+    def __init__(
+        self,
+        chunks: list[Chunk],
+        document_frequency: Counter[str],
+        parents: dict[str, ParentChunk] | None = None,
+        corpus_fingerprint: str | None = None,
+    ):
         self.chunks = chunks
         self.document_frequency = document_frequency
         self.parents = parents or {}
+        self.corpus_fingerprint = corpus_fingerprint
 
     @classmethod
-    def build(cls, chunks: list[Chunk], parents: dict[str, ParentChunk] | None = None) -> "TfidfIndex":
+    def build(
+        cls,
+        chunks: list[Chunk],
+        parents: dict[str, ParentChunk] | None = None,
+        corpus_fingerprint: str | None = None,
+    ) -> "TfidfIndex":
         df: Counter[str] = Counter()
         for chunk in chunks:
             df.update(set(tokenize(cls._searchable_text(chunk))))
-        return cls(chunks, df, parents)
+        return cls(chunks, df, parents, corpus_fingerprint)
 
     @staticmethod
     def _searchable_text(chunk: Chunk) -> str:
@@ -171,6 +183,7 @@ class TfidfIndex:
             "chunks": [asdict(chunk) for chunk in self.chunks],
             "document_frequency": dict(self.document_frequency),
             "parents": [asdict(parent) for parent in self.parents.values()],
+            "corpus_fingerprint": self.corpus_fingerprint,
         }
 
     @classmethod
@@ -179,4 +192,5 @@ class TfidfIndex:
             chunks=[Chunk(**chunk) for chunk in data["chunks"]],
             document_frequency=Counter(data["document_frequency"]),
             parents={parent["id"]: ParentChunk(**parent) for parent in data.get("parents", [])},
+            corpus_fingerprint=data.get("corpus_fingerprint"),
         )

@@ -19,6 +19,7 @@ class EmbeddingIndex:
     vectors: np.ndarray
     model_name: str = DEFAULT_MODEL
     parents: dict[str, ParentChunk] = field(default_factory=dict)
+    corpus_fingerprint: str | None = None
     _encoder: Any | None = None
 
     @classmethod
@@ -27,8 +28,15 @@ class EmbeddingIndex:
         chunks: list[Chunk],
         model_name: str = DEFAULT_MODEL,
         parents: dict[str, ParentChunk] | None = None,
+        corpus_fingerprint: str | None = None,
     ) -> "EmbeddingIndex":
-        index = cls(chunks=chunks, vectors=np.empty((0, 0)), model_name=model_name, parents=parents or {})
+        index = cls(
+            chunks=chunks,
+            vectors=np.empty((0, 0)),
+            model_name=model_name,
+            parents=parents or {},
+            corpus_fingerprint=corpus_fingerprint,
+        )
         encoder = index._get_encoder()
         passages = [TfidfIndex._searchable_text(chunk) for chunk in chunks]
         index.vectors = np.asarray(
@@ -85,6 +93,7 @@ class EmbeddingIndex:
             "chunks": [asdict(chunk) for chunk in self.chunks],
             "vectors": self.vectors.tolist(),
             "parents": [asdict(parent) for parent in self.parents.values()],
+            "corpus_fingerprint": self.corpus_fingerprint,
         }
 
     @classmethod
@@ -94,4 +103,5 @@ class EmbeddingIndex:
             vectors=np.asarray(data["vectors"], dtype=np.float32),
             model_name=data.get("model_name", DEFAULT_MODEL),
             parents={parent["id"]: ParentChunk(**parent) for parent in data.get("parents", [])},
+            corpus_fingerprint=data.get("corpus_fingerprint"),
         )

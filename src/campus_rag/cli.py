@@ -6,13 +6,17 @@ import time
 from statistics import median
 from pathlib import Path
 
+from .corpus import build_corpus_manifest
+from .document_quality import lint_documents
 from .embeddings import DEFAULT_MODEL, EmbeddingIndex
 from .feedback_report import REASON_LABELS, build_feedback_report
 from .generation import DEFAULT_MODEL as DEFAULT_DEEPSEEK_MODEL, DeepSeekGenerator, assess_evidence, check_answer
 from .history import AnswerHistory, FeedbackHistory
+from .index_status import get_index_freshness
 from .grounding_report import build_grounding_report
 from .hybrid import HybridRetriever
 from .judge import GroundedAnswerJudge
+from .quality_gate import evaluate_quality_gate
 from .reranking import DEFAULT_RERANKER, RerankingRetriever
 from .retrieval_diagnostics import build_retrieval_diagnostic
 from .retrieval import TfidfIndex, load_chunks, load_parent_child_corpus
@@ -28,12 +32,68 @@ def load_embedding_index(path: Path) -> EmbeddingIndex:
 
 
 def command_index(args: argparse.Namespace) -> None:
-    chunks, parents = load_parent_child_corpus(Path(args.docs))
-    index = TfidfIndex.build(chunks, parents)
+    docs_dir = Path(args.docs)
+    chunks, parents = load_parent_child_corpus(docs_dir)
+    index = TfidfIndex.build(chunks, parents, build_corpus_manifest(docs_dir)["fingerprint"])
     destination = Path(args.output)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(index.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Indexed {len(index.chunks)} chunks -> {destination}")
+
+
+def command_docs_lint(args: argparse.Namespace) -> None:
+    report = lint_documents(Path(args.docs), args.max_chunk_chars)
+    print(f"documents={report['documents']} chunks={report['chunks']} warnings={report['warning_count']}")
+    for key in ("empty_documents", "duplicate_filenames", "oversized_chunks", "instruction_like_lines"):
+        if report[key]:
+            print(f"{key}: {len(report[key])}")
+    if args.report:
+        destination = Path(args.report)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"Report saved -> {destination}")
+    if args.fail_on_warning and report["warning_count"]:
+        raise RuntimeError("Document lint found warnings")
+
+
+def index_freshness_summary(args: argparse.Namespace) -> dict[str, str]:
+    docs_dir = Path(args.docs)
+    return {
+        "embedding": get_index_freshness(Path(args.index), docs_dir),
+        "lexical": get_index_freshness(Path(args.lexical_index), docs_dir),
+    }
+
+
+def command_index_status(args: argparse.Namespace) -> None:
+    freshness = index_freshness_summary(args)
+    print(f"embedding={freshness['embedding']} lexical={freshness['lexical']}")
+    if args.report:
+        destination = Path(args.report)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(json.dumps({"index_freshness": freshness}, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"Report saved -> {destination}")
+    if args.require_fresh and any(value != "fresh" for value in freshness.values()):
+        raise RuntimeError("Indexes are not fresh; rebuild both indexes before release")
+
+
+def command_quality_gate(args: argparse.Namespace) -> None:
+    retrieval_report = json.loads(Path(args.retrieval_report).read_text(encoding="utf-8"))
+    abstention_report = json.loads(Path(args.abstention_report).read_text(encoding="utf-8"))
+    report = evaluate_quality_gate(
+        retrieval_report,
+        abstention_report,
+        index_freshness_summary(args),
+        args.min_recall,
+        args.min_abstention_accuracy,
+    )
+    print(f"quality gate={'PASS' if report['passed'] else 'FAIL'}")
+    for name, check in report["checks"].items():
+        print(f"- {name}: actual={check['actual']} threshold={check['threshold']} passed={check['passed']}")
+    destination = Path(args.report)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    if not report["passed"]:
+        raise RuntimeError("Quality gate failed")
 
 
 def command_query(args: argparse.Namespace) -> None:
@@ -58,8 +118,14 @@ def print_results(results: list, latency_ms: float) -> None:
 
 
 def command_embedding_index(args: argparse.Namespace) -> None:
-    chunks, parents = load_parent_child_corpus(Path(args.docs))
-    index = EmbeddingIndex.build(chunks, model_name=args.model, parents=parents)
+    docs_dir = Path(args.docs)
+    chunks, parents = load_parent_child_corpus(docs_dir)
+    index = EmbeddingIndex.build(
+        chunks,
+        model_name=args.model,
+        parents=parents,
+        corpus_fingerprint=build_corpus_manifest(docs_dir)["fingerprint"],
+    )
     destination = Path(args.output)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(index.to_dict(), ensure_ascii=False), encoding="utf-8")
@@ -515,6 +581,29 @@ def build_parser() -> argparse.ArgumentParser:
     index.add_argument("--docs", required=True)
     index.add_argument("--output", required=True)
     index.set_defaults(handler=command_index)
+    docs_lint = commands.add_parser("docs-lint", help="Check local source files before indexing")
+    docs_lint.add_argument("--docs", required=True)
+    docs_lint.add_argument("--max-chunk-chars", type=int, default=2400)
+    docs_lint.add_argument("--report", help="Optional JSON path for the lint report")
+    docs_lint.add_argument("--fail-on-warning", action="store_true")
+    docs_lint.set_defaults(handler=command_docs_lint)
+    index_status = commands.add_parser("index-status", help="Check whether local indexes match current source documents")
+    index_status.add_argument("--docs", default="data/docs")
+    index_status.add_argument("--index", default="data/embedding_index.json")
+    index_status.add_argument("--lexical-index", default="data/index.json")
+    index_status.add_argument("--report", help="Optional JSON path for index status")
+    index_status.add_argument("--require-fresh", action="store_true")
+    index_status.set_defaults(handler=command_index_status)
+    quality_gate = commands.add_parser("quality-gate", help="Apply release thresholds to retrieval and abstention reports")
+    quality_gate.add_argument("--docs", default="data/docs")
+    quality_gate.add_argument("--index", default="data/embedding_index.json")
+    quality_gate.add_argument("--lexical-index", default="data/index.json")
+    quality_gate.add_argument("--retrieval-report", required=True)
+    quality_gate.add_argument("--abstention-report", required=True)
+    quality_gate.add_argument("--report", required=True)
+    quality_gate.add_argument("--min-recall", type=float, default=1.0)
+    quality_gate.add_argument("--min-abstention-accuracy", type=float, default=1.0)
+    quality_gate.set_defaults(handler=command_quality_gate)
     query = commands.add_parser("query")
     query.add_argument("--index", required=True)
     query.add_argument("--question", required=True)

@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .cli import load_embedding_index, load_index
+from .index_status import get_index_freshness
 from .generation import (
     DEFAULT_MODEL,
     PROMPT_VERSION,
@@ -31,6 +32,7 @@ DEFAULT_LEXICAL_INDEX = PROJECT_ROOT / "data" / "index.json"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 DEFAULT_HISTORY_PATH = PROJECT_ROOT / "logs" / "answer_history.jsonl"
 DEFAULT_FEEDBACK_PATH = PROJECT_ROOT / "logs" / "feedback.jsonl"
+DEFAULT_DOCS_DIR = PROJECT_ROOT / "data" / "docs"
 
 
 class Retriever(Protocol):
@@ -64,6 +66,7 @@ class ReadyResponse(BaseModel):
     lexical_index_exists: bool
     api_key_configured: bool
     model: str
+    index_freshness: dict[str, str]
 
 
 class AnswerResponse(RetrievalResponse):
@@ -101,12 +104,14 @@ class CampusRagService:
         model: str = DEFAULT_MODEL,
         history_path: Path | None = DEFAULT_HISTORY_PATH,
         feedback_path: Path | None = DEFAULT_FEEDBACK_PATH,
+        docs_dir: Path = DEFAULT_DOCS_DIR,
     ):
         self.embedding_index = embedding_index
         self.lexical_index = lexical_index
         self.model = model
         self.history = AnswerHistory(history_path) if history_path else None
         self.feedback = FeedbackHistory(feedback_path) if feedback_path else None
+        self.docs_dir = docs_dir
 
     @cached_property
     def retriever(self) -> HybridRetriever:
@@ -126,13 +131,21 @@ class CampusRagService:
     def readiness(self) -> dict:
         embedding_exists = self.embedding_index.is_file()
         lexical_exists = self.lexical_index.is_file()
+        freshness = {
+            "embedding": self._index_freshness(self.embedding_index),
+            "lexical": self._index_freshness(self.lexical_index),
+        }
         return {
-            "status": "ok" if embedding_exists and lexical_exists else "degraded",
+            "status": "ok" if embedding_exists and lexical_exists and all(value == "fresh" for value in freshness.values()) else "degraded",
             "embedding_index_exists": embedding_exists,
             "lexical_index_exists": lexical_exists,
             "api_key_configured": bool(os.environ.get("DEEPSEEK_API_KEY")),
             "model": self.model,
+            "index_freshness": freshness,
         }
+
+    def _index_freshness(self, index_path: Path) -> str:
+        return get_index_freshness(index_path, self.docs_dir)
 
     @staticmethod
     def _index_signature(path: Path) -> dict:

@@ -211,6 +211,21 @@ python -m campus_rag.cli benchmark --index data/embedding_index.json --lexical-i
 
 完整版本记录见 [CHANGELOG.md](CHANGELOG.md)。
 
+## 第 21～30 天：发布可靠性
+
+- 每次构建索引都会写入课程资料指纹；`/ready` 与 `index-status` 会报告 `fresh / stale / unknown / missing`，防止修改资料后仍使用旧索引。
+- `docs-lint` 会扫描空文档、同名来源、过大子块和疑似指令注入内容；当前资料扫描为 6 个文档、449 个子块、0 个警告。
+- `quality-gate` 统一检查索引新鲜度、困难检索集和拒答集，当前 Day 30 结果为 PASS。
+
+```powershell
+$env:PYTHONPATH="src"
+python -m campus_rag.cli docs-lint --docs data/docs --fail-on-warning
+python -m campus_rag.cli index-status --docs data/docs --index data/embedding_index.json --lexical-index data/index.json --require-fresh
+python -m campus_rag.cli quality-gate --docs data/docs --index data/embedding_index.json --lexical-index data/index.json --retrieval-report reports/day30_hard_retrieval.json --abstention-report reports/day30_abstention.json --report reports/day30_quality_gate.json
+```
+
+用于简历和面试的项目概述见 [docs/portfolio.md](docs/portfolio.md)。
+
 ## Parent-Child RAG
 
 索引仍以段落级“子块”进行检索，以保持术语命中的精度；命中后，系统会一并传给模型该子块所在章节中的相邻正文（父级上下文）。这避免了只检索到“差异：”等标题、却遗漏后续定义或列表的碎片化问题。

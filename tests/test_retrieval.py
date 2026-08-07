@@ -64,6 +64,10 @@ class RetrievalTests(unittest.TestCase):
         self.assertTrue(restored.parents)
         self.assertEqual(restored.search("树的定义", top_k=1)[0].parent_text, "树由结点组成。")
 
+    def test_corpus_fingerprint_survives_index_serialization(self):
+        restored = TfidfIndex.from_dict(TfidfIndex.build(self.index.chunks, corpus_fingerprint="abc123").to_dict())
+        self.assertEqual(restored.corpus_fingerprint, "abc123")
+
     def test_eval_reports_per_case_hits(self):
         report = cli.evaluate(
             self.index,

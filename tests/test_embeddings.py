@@ -36,3 +36,12 @@ class EmbeddingIndexTests(unittest.TestCase):
         result = index.search("树的差异", top_k=1)
 
         self.assertEqual(result[0].parent_text, "数据位于叶子结点。")
+
+    def test_corpus_fingerprint_survives_embedding_index_serialization(self):
+        index = EmbeddingIndex(
+            chunks=[Chunk("tree.md", "tree", "tree")],
+            vectors=np.asarray([[1.0, 0.0]], dtype=np.float32),
+            corpus_fingerprint="abc123",
+        )
+        restored = EmbeddingIndex.from_dict(index.to_dict())
+        self.assertEqual(restored.corpus_fingerprint, "abc123")
